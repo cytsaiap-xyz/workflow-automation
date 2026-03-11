@@ -17,7 +17,7 @@ workflow-automation/
 ├── backend/            # Node.js/Express API server
 │   └── src/
 │       ├── __tests__/  # Vitest test suite
-│       ├── db/         # SQLite initialization (better-sqlite3)
+│       ├── db/         # SQLite initialization (sql.js with sync adapter)
 │       ├── models/     # Database access layer
 │       ├── routes/     # Express route handlers
 │       ├── services/   # Business logic
@@ -145,7 +145,7 @@ ${env.MY_ENV_VAR}                   # Environment variable
 
 ---
 
-## Database (SQLite)
+## Database (SQLite via sql.js)
 
 ### Schema Overview
 ```sql
@@ -185,8 +185,9 @@ CREATE TABLE execution_logs (
 ```
 
 **Key facts:**
+- Uses sql.js with a synchronous adapter (SqlJsAdapter in `backend/src/db/database.ts`) that persists to disk after writes
 - Schema is created on first run (no migrations); all tables use `CREATE TABLE IF NOT EXISTS`
-- WAL mode and foreign key enforcement are enabled at startup
+- Foreign key enforcement is enabled at startup
 - `definition` and `result` fields are JSON-stringified before storage
 - Always use parameterized queries (prepared statements) — no string concatenation in SQL
 
@@ -249,7 +250,7 @@ CREATE TABLE execution_logs (
 - Hard timeout enforced
 
 ### Database Queries
-- **Always use parameterized queries.** Models use `better-sqlite3` prepared statements.
+- **Always use parameterized queries.** Models use `sql.js` prepared statements via the sync adapter.
 - Do not construct SQL from user input strings.
 
 ### CORS
@@ -267,7 +268,7 @@ docker-compose up -d
 
 ### Container Details
 - **Base image:** `registry.access.redhat.com/ubi8/nodejs-18` (Red Hat UBI 8)
-- **Builder stage:** Installs GCC 12 toolset (required for `better-sqlite3` native bindings)
+- **Builder stage:** Installs GCC 12 toolset for native dependencies
 - **Runtime stage:** Non-root user (UID 1001), Python 3 available for script steps
 - **Data volume:** `/var/data` — mount this for persistent SQLite storage
 - **Health check:** `GET /api/health` every 30s
@@ -309,7 +310,7 @@ Tests use `vitest` + `supertest` for HTTP testing. Mocking follows Vitest conven
 
 6. **SMTP is optional.** Email steps will fail gracefully (logged error) if SMTP env vars are not configured. Don't make email a hard dependency.
 
-7. **`better-sqlite3` is synchronous.** All DB operations are blocking (no promises). This is by design — don't add `async/await` wrappers to model methods.
+7. **The `sql.js` adapter provides a synchronous API.** All DB operations are blocking (no promises), with the adapter persisting to disk after writes. This is by design — don't add `async/await` wrappers to model methods.
 
 ---
 

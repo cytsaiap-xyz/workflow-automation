@@ -11,23 +11,11 @@ import {
 } from '../types/workflow';
 import { ExecutionModel, LogModel } from '../models/execution';
 import { ScriptRunner, ScriptResult } from './scriptRunner';
-import { DbConnectorService } from './dbConnector';
 import { executionManager } from './executionManager';
 import { executionEventBus, ExecutionEvent } from './executionEventBus';
-import nodemailer from 'nodemailer';
+import { StepExecutor } from './stepExecutor';
 
-// Initialize email transporter
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
-
-interface ExecutionContext {
+export interface ExecutionContext {
   executionId: string;
   workflow: Workflow;
   variables: Record<string, any>;
@@ -221,7 +209,7 @@ export class ExecutionEngine {
       const sourceVar = station.iterator.sourceVariable;
       const resolvedSource = ScriptRunner.interpolateVariables(sourceVar, context.variables);
       let items: any[] = [];
-      
+
       try {
         items = JSON.parse(resolvedSource);
         if (!Array.isArray(items)) {
@@ -235,28 +223,40 @@ export class ExecutionEngine {
       }
 
       this.log(context, 'info', `Starting iteration over ${items.length} items`, undefined, station.id);
-      
+
       const iterationResults: any[] = [];
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        
-        // Scope variables for this iteration
+
+        // Scoped iteration context: each iteration gets its own copy of steps
+        // to prevent cross-iteration variable collisions
         const iterationContext: ExecutionContext = {
           ...context,
-          variables: { 
-            ...context.variables, 
+          variables: {
+            ...context.variables,
             [station.iterator.itemVariableName || 'item']: item,
             ['index']: i
           },
-          // We share the same step results and log history to allow access, 
-          // but steps in an iterator might overwrite each other in context.steps
-          // This is a known limitation for now.
+          steps: { ...context.steps }, // Scoped copy per iteration
         };
 
         this.log(context, 'info', `Iteration ${i + 1}/${items.length}`, { item }, station.id);
-        
+
         const iterStepsResult = await this.executeStationSteps(station, iterationContext);
         stationResult.steps.push(...iterStepsResult.steps);
+
+        // Store indexed step results for cross-iteration access
+        for (const [key, value] of Object.entries(iterationContext.steps)) {
+          if (!context.steps[key]) {
+            context.steps[`${key}_iter_${i}`] = value;
+          }
+        }
+        // Final iteration's results also stored at original keys for backward compatibility
+        if (i === items.length - 1) {
+          for (const [key, value] of Object.entries(iterationContext.steps)) {
+            context.steps[key] = value;
+          }
+        }
 
         if (iterStepsResult.status === 'failed') {
           stationResult.status = 'failed';
@@ -264,7 +264,7 @@ export class ExecutionEngine {
           this.log(context, 'error', `Iteration failed at index ${i}`, undefined, station.id);
           return stationResult;
         }
-        
+
         iterationResults.push(iterStepsResult.output);
       }
 
@@ -413,21 +413,23 @@ export class ExecutionEngine {
   }
 
   /**
-   * Execute a single step
+   * Execute a single step with retry logic, logging, and event emission.
+   * Delegates the actual type-specific execution to StepExecutor.
    */
   private static async executeStep(step: Step, context: ExecutionContext): Promise<StepResult> {
+    const resolvedInput = StepExecutor.resolveInputVariables(step, context.variables);
+
     const stepResult: StepResult = {
       stepId: step.id,
       stepName: step.name,
       stepType: step.type,
       status: 'running',
       startTime: new Date().toISOString(),
-      input: this.resolveInputVariables(step, context)
+      input: resolvedInput
     };
 
     this.emitEvent(context, 'step:start', { stepId: step.id, stepName: step.name });
 
-    const startTime = new Date().toISOString();
     let retryAttempts = 0;
     let currentInterval = step.retryPolicy?.initialInterval || 1000;
     const maxAttempts = step.retryPolicy?.maxAttempts || 1;
@@ -445,217 +447,11 @@ export class ExecutionEngine {
       this.log(context, 'info', `Executing step: ${step.name}`, stepResult.input, undefined, step.id);
 
       try {
-        let result: ScriptResult;
-
-        switch (step.type) {
-          case 'script-js':
-            result = await ScriptRunner.executeJS(
-              step.config.code || '',
-              { 
-                variables: context.variables, 
-                inputData: stepResult.input,
-                steps: context.steps 
-              },
-              step.timeout || 30000
-            );
-            break;
-
-          case 'script-python':
-            result = await ScriptRunner.executePython(
-              step.config.code || '',
-              { 
-                variables: context.variables, 
-                inputData: stepResult.input || {},
-                steps: context.steps
-              },
-              step.timeout || 30000
-            );
-            break;
-
-          case 'http-request':
-            const method = (step.config.method || 'GET').toUpperCase();
-            if (context.simulate && method !== 'GET') {
-              this.log(context, 'info', `[SIMULATE] Skipping mutating HTTP request (${method}) to ${step.config.url}`, undefined, undefined, step.id);
-              result = {
-                success: true,
-                output: { simulated: true, status: 200, statusText: 'OK (simulated)', data: null },
-                logs: [`[SIMULATE] HTTP ${method} request skipped to prevent side effects`]
-              };
-            } else {
-              if (context.simulate) {
-                this.log(context, 'info', `[SIMULATE] Executing GET request to fetch real data for simulation`, undefined, undefined, step.id);
-              }
-              result = await ScriptRunner.executeHttpRequest(
-                step.config,
-                { ...context.variables, inputData: stepResult.input }
-              );
-            }
-            break;
-
-          case 'wait': {
-            const duration = step.config.duration || 0;
-            const unit = step.config.unit || 'seconds';
-            const multiplier = unit === 'hours' ? 3600000 : unit === 'minutes' ? 60000 : 1000;
-            const waitMs = duration * multiplier;
-            if (context.simulate) {
-              this.log(context, 'info', `[SIMULATE] Skipping wait of ${duration} ${unit}`, undefined, undefined, step.id);
-            } else {
-              this.log(context, 'info', `Waiting for ${duration} ${unit} (${waitMs}ms)...`, undefined, undefined, step.id);
-              await new Promise(resolve => setTimeout(resolve, waitMs));
-            }
-            result = {
-              success: true,
-              output: { waited: !context.simulate, simulated: context.simulate, duration, unit, ms: waitMs },
-              logs: [context.simulate ? `[SIMULATE] Wait skipped (${duration} ${unit})` : `Waited for ${duration} ${unit}`]
-            };
-            break;
-          }
-
-          case 'if-else':
-            const condition = step.config.condition || 'true';
-            const conditionResult = ScriptRunner.evaluateCondition(condition, {
-              ...context.variables,
-              inputData: stepResult.input
-            });
-            result = {
-              success: true,
-              output: { result: conditionResult, branch: conditionResult ? 'true' : 'false' },
-              logs: [`Condition evaluated to: ${conditionResult}`]
-            };
-            break;
-
-          case 'set-variable':
-            const varName = step.config.variableName || 'variable';
-            const varValue = ScriptRunner.interpolateVariables(
-              step.config.variableValue || '',
-              { ...context.variables, inputData: stepResult.input }
-            );
-            context.variables[varName] = varValue;
-            result = {
-              success: true,
-              output: { [varName]: varValue },
-              logs: [`Set variable ${varName} = ${varValue}`]
-            };
-            break;
-
-          case 'trigger-manual':
-          case 'trigger-cron':
-          case 'trigger-webhook':
-            result = {
-              success: true,
-              output: { triggered: true, timestamp: new Date().toISOString() },
-              logs: [`Trigger ${step.type} activated`]
-            };
-            break;
-
-          case 'notification-slack':
-          case 'action-slack': {
-            const slackUrl = ScriptRunner.interpolateVariables(step.config.slackWebhookUrl || '', { ...context.variables, inputData: stepResult.input });
-            const slackMsg = ScriptRunner.interpolateVariables(step.config.slackMessage || '', { ...context.variables, inputData: stepResult.input });
-
-            if (context.simulate) {
-              this.log(context, 'info', `[SIMULATE] Skipping Slack message`, { message: slackMsg }, undefined, step.id);
-              result = {
-                success: true,
-                output: { simulated: true, sent: false, message: slackMsg },
-                logs: ['[SIMULATE] Slack message skipped']
-              };
-            } else {
-              this.log(context, 'info', `Sending Slack message to ${slackUrl.substring(0, 20)}...`, undefined, undefined, step.id);
-              result = await ScriptRunner.executeHttpRequest(
-                {
-                  url: slackUrl,
-                  method: 'POST',
-                  body: JSON.stringify({ text: slackMsg })
-                },
-                { ...context.variables, inputData: stepResult.input }
-              );
-            }
-            break;
-          }
-
-          case 'action-email': {
-            const to = ScriptRunner.interpolateVariables(step.config.emailTo || '', { ...context.variables, inputData: stepResult.input });
-            const subject = ScriptRunner.interpolateVariables(step.config.emailSubject || '', { ...context.variables, inputData: stepResult.input });
-            const emailBody = ScriptRunner.interpolateVariables(step.config.emailBody || '', { ...context.variables, inputData: stepResult.input });
-
-            if (context.simulate) {
-              this.log(context, 'info', `[SIMULATE] Skipping email to ${to}`, { subject }, undefined, step.id);
-              result = {
-                success: true,
-                output: { simulated: true, sent: false, to, subject, timestamp: new Date().toISOString() },
-                logs: [`[SIMULATE] Email to ${to} skipped`]
-              };
-            } else {
-              this.log(context, 'info', `Sending Email to ${to}`, { subject, body: emailBody }, undefined, step.id);
-
-              try {
-                const info = await transporter.sendMail({
-                  from: process.env.SMTP_FROM || '"Workflow Automation" <no-reply@localhost>',
-                  to,
-                  subject,
-                  text: emailBody,
-                });
-
-                result = {
-                  success: true,
-                  output: { sent: true, to, subject, messageId: info.messageId, timestamp: new Date().toISOString() },
-                  logs: [`Email successfully sent to ${to} (MessageId: ${info.messageId})`]
-                };
-              } catch (err: any) {
-                result = {
-                  success: false,
-                  error: `Failed to send email: ${err.message}`,
-                  output: { sent: false, to, subject, timestamp: new Date().toISOString() },
-                  logs: [`Email sending failed: ${err.message}`]
-                };
-              }
-            }
-            break;
-          }
-
-          case 'connector-db': {
-            const dbQuery = ScriptRunner.interpolateVariables(
-              step.config.dbQuery || '',
-              { ...context.variables, inputData: stepResult.input }
-            );
-
-            if (context.simulate) {
-              this.log(context, 'info', `[SIMULATE] Skipping ${step.config.dbType} query`, { query: dbQuery }, undefined, step.id);
-              result = {
-                success: true,
-                output: { simulated: true, rows: [], count: 0 },
-                logs: [`[SIMULATE] Database query skipped`]
-              };
-            } else {
-              this.log(context, 'info', `Executing ${step.config.dbType} query...`, { query: dbQuery }, undefined, step.id);
-
-              try {
-                const rows = await DbConnectorService.executeQuery(step.config, dbQuery);
-                result = {
-                  success: true,
-                  output: { rows, count: rows.length },
-                  logs: [`Query executed successfully, returned ${rows.length} rows`]
-                };
-              } catch (err: any) {
-                result = {
-                  success: false,
-                  error: `Database connection or query failed: ${err.message}`,
-                  output: { error: err.message },
-                  logs: [`Database error: ${err.message}`]
-                };
-              }
-            }
-            break;
-          }
-
-          default:
-            result = {
-              success: false,
-              error: `Unknown step type: ${step.type}`,
-              logs: []
-            };
-        }
+        const result = await StepExecutor.executeStepByType(
+          step,
+          { variables: context.variables, steps: context.steps, simulate: context.simulate },
+          resolvedInput
+        );
 
         // Log script output
         for (const log of result.logs) {
@@ -710,52 +506,32 @@ export class ExecutionEngine {
     switch (station.condition.type) {
       case 'always':
         return true;
-      
+
       case 'previousSuccess':
         // Check if previous station completed successfully
         const stationResults = Object.values(context.stations);
         if (stationResults.length === 0) return true;
         const lastStation = stationResults[stationResults.length - 1];
         return lastStation.status === 'completed';
-      
+
       case 'expression':
         if (!station.condition.expression) return true;
         return ScriptRunner.evaluateCondition(station.condition.expression, {
           ...context.variables,
           steps: context.steps
         });
-      
+
       default:
         return true;
     }
   }
 
   /**
-   * Resolve input variables for a step
-   */
-  private static resolveInputVariables(step: Step, context: ExecutionContext): Record<string, any> {
-    const input: Record<string, any> = {};
-
-    if (step.inputVars) {
-      for (const mapping of step.inputVars) {
-        const value = ScriptRunner.interpolateVariables(mapping.source, context.variables);
-        try {
-          input[mapping.name] = JSON.parse(value);
-        } catch {
-          input[mapping.name] = value;
-        }
-      }
-    }
-
-    return input;
-  }
-
-  /**
    * Aggregate all step outputs into station output
    */
   private static aggregateStationOutput(
-    station: Station, 
-    stepResults: StepResult[], 
+    station: Station,
+    stepResults: StepResult[],
     context: ExecutionContext
   ): Record<string, any> {
     return {

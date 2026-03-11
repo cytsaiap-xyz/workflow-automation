@@ -4,6 +4,7 @@ import { ExecutionModel } from '../models/execution';
 import { VersionModel } from '../models/version';
 import { ExecutionEngine } from '../services/executionEngine';
 import { scheduler } from '../services/scheduler';
+import { validateCreateWorkflow, validateUpdateWorkflow } from '../middleware/validateWorkflow';
 import {
   CreateWorkflowRequest,
   UpdateWorkflowRequest,
@@ -68,16 +69,9 @@ router.get('/:id', (req: Request, res: Response) => {
  * POST /api/workflows
  * Create a new workflow
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', validateCreateWorkflow, async (req: Request, res: Response) => {
   try {
     const data: CreateWorkflowRequest = req.body;
-    
-    if (!data.name) {
-      return res.status(400).json({ success: false, error: 'Name is required' });
-    }
-    if (!data.definition) {
-      return res.status(400).json({ success: false, error: 'Definition is required' });
-    }
 
     const workflow = WorkflowModel.create(data);
     await syncSchedule(workflow); // Sync with scheduler
@@ -92,7 +86,7 @@ router.post('/', async (req: Request, res: Response) => {
  * PUT /api/workflows/:id
  * Update a workflow
  */
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', validateUpdateWorkflow, async (req: Request, res: Response) => {
   try {
     const data: UpdateWorkflowRequest = req.body;
 

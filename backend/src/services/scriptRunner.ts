@@ -4,6 +4,9 @@ import * as http from 'http';
 import * as https from 'https';
 import { URL } from 'url';
 import { StepConfig } from '../types/workflow';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('scriptRunner');
 
 export interface ScriptResult {
   success: boolean;
@@ -268,7 +271,7 @@ ${code}
       const result = runInContext(`(${interpolated})`, sandbox, { timeout: 1000 });
       return Boolean(result);
     } catch (error) {
-      console.error('Condition evaluation error:', error);
+      log.error('Condition evaluation error: %s', error);
       return false;
     }
   }

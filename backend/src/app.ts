@@ -6,7 +6,9 @@ import executionRoutes from './routes/executions';
 import scheduleRoutes from './routes/schedules';
 import metricsRoutes from './routes/metrics';
 import webhookRoutes from './routes/webhooks';
-import { requestLogger } from './utils/logger';
+import { requestLogger, createLogger } from './utils/logger';
+
+const log = createLogger('app');
 
 const app = express();
 
@@ -46,7 +48,7 @@ if (process.env.NODE_ENV === 'production') {
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Error:', err);
+  log.error('Error: %s', err);
   res.status(500).json({ success: false, error: err.message });
 });
 
