@@ -265,6 +265,19 @@ export class StepExecutor {
         return AiExecutor.executeAgent(step.config, { ...context.variables, inputData: resolvedInput });
       }
 
+      case 'ai-router': {
+        if (context.simulate) {
+          const routes = step.config.aiRoutes || [];
+          const firstBranch = routes[0]?.branchId || 'default';
+          return {
+            success: true,
+            output: { simulated: true, branch: firstBranch, reasoning: 'Simulated: using first route', allRoutes: routes.map(r => r.branchId) },
+            logs: ['[SIMULATE] AI Router skipped, using first route']
+          };
+        }
+        return AiExecutor.executeRouter(step.config, { ...context.variables, inputData: resolvedInput });
+      }
+
       default:
         return {
           success: false,

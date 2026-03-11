@@ -28,7 +28,7 @@ const NODE_CATEGORIES = {
   },
   ai: {
     label: '🤖 AI',
-    types: ['ai-prompt', 'ai-structured-output', 'ai-agent'] as StepType[],
+    types: ['ai-prompt', 'ai-structured-output', 'ai-agent', 'ai-router'] as StepType[],
   },
 };
 

@@ -17,6 +17,7 @@ const VALID_STEP_TYPES = [
   'ai-prompt',
   'ai-structured-output',
   'ai-agent',
+  'ai-router',
 ] as const;
 
 const VALID_STATUSES = ['draft', 'active', 'paused'] as const;

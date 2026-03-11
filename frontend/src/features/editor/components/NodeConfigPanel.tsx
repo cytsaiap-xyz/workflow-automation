@@ -66,6 +66,9 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
   const [aiOutputSchema, setAiOutputSchema] = useState(step.config.aiOutputSchema ? JSON.stringify(step.config.aiOutputSchema, null, 2) : '');
   const [aiToolsJson, setAiToolsJson] = useState(step.config.aiTools ? JSON.stringify(step.config.aiTools, null, 2) : '');
   const [aiMaxIterations, setAiMaxIterations] = useState(step.config.aiMaxIterations || 10);
+  const [aiRoutes, setAiRoutes] = useState<{branchId: string, description: string}[]>(
+    step.config.aiRoutes || []
+  );
 
   // Picker state
   const [activePicker, setActivePicker] = useState<string | null>(null);
@@ -118,6 +121,7 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
     setAiOutputSchema(step.config.aiOutputSchema ? JSON.stringify(step.config.aiOutputSchema, null, 2) : '');
     setAiToolsJson(step.config.aiTools ? JSON.stringify(step.config.aiTools, null, 2) : '');
     setAiMaxIterations(step.config.aiMaxIterations || 10);
+    setAiRoutes(step.config.aiRoutes || []);
   }, [step]);
 
   const handleSave = () => {
@@ -201,6 +205,17 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         config.aiHeaders = aiHeaders.length > 0 ? Object.fromEntries(aiHeaders.filter(h => h.key).map(h => [h.key, h.value])) : undefined;
         try { config.aiTools = aiToolsJson ? JSON.parse(aiToolsJson) : undefined; } catch { /* keep existing */ }
         config.aiMaxIterations = Number(aiMaxIterations);
+        break;
+      case 'ai-router':
+        config.aiBaseUrl = aiBaseUrl;
+        config.aiApiKey = aiApiKey;
+        config.aiModel = aiModel;
+        config.aiPrompt = aiPrompt;
+        config.aiSystemPrompt = aiSystemPrompt;
+        config.aiTemperature = Number(aiTemperature);
+        config.aiMaxTokens = Number(aiMaxTokens);
+        config.aiHeaders = aiHeaders.length > 0 ? Object.fromEntries(aiHeaders.filter(h => h.key).map(h => [h.key, h.value])) : undefined;
+        config.aiRoutes = aiRoutes.filter(r => r.branchId.trim());
         break;
     }
 
@@ -813,6 +828,7 @@ print(json.dumps({'result': result}))`}
       case 'ai-prompt':
       case 'ai-structured-output':
       case 'ai-agent':
+      case 'ai-router':
         return (
           <>
             {/* Connection */}
@@ -1021,13 +1037,86 @@ print(json.dumps({'result': result}))`}
               </>
             )}
 
+            {/* Router Routes (only for ai-router) */}
+            {step.type === 'ai-router' && (
+              <div className="form-group">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="form-label">Routes (Branches)</label>
+                  <button
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => setAiRoutes([...aiRoutes, { branchId: '', description: '' }])}
+                  >
+                    + Add Route
+                  </button>
+                </div>
+                {aiRoutes.length === 0 ? (
+                  <p className="text-xs text-muted italic">No routes configured. Add at least 2 routes.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {aiRoutes.map((route, idx) => {
+                      const colors = ['#8b5cf6', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#84cc16'];
+                      const color = colors[idx % colors.length];
+                      return (
+                        <div key={idx} style={{ borderLeft: `3px solid ${color}`, paddingLeft: '10px' }}>
+                          <div className="flex gap-2 items-center mb-1">
+                            <input
+                              type="text"
+                              className="form-input"
+                              placeholder="Branch ID (e.g. approve)"
+                              value={route.branchId}
+                              onChange={(e) => {
+                                const updated = [...aiRoutes];
+                                updated[idx].branchId = e.target.value.replace(/\s+/g, '_');
+                                setAiRoutes(updated);
+                              }}
+                              style={{ flex: 1, fontWeight: 600 }}
+                            />
+                            <button
+                              className="btn btn-ghost btn-icon btn-xs text-red-500"
+                              onClick={() => setAiRoutes(aiRoutes.filter((_, i) => i !== idx))}
+                            >
+                              ×
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="Description (helps the LLM decide)"
+                            value={route.description}
+                            onChange={(e) => {
+                              const updated = [...aiRoutes];
+                              updated[idx].description = e.target.value;
+                              setAiRoutes(updated);
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-xs text-muted mt-2">
+                  The LLM will read each route's description and pick the best one. Connect edges from each branch handle to downstream steps.
+                </p>
+              </div>
+            )}
+
             {/* Output info */}
             <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded text-xs border border-gray-200 dark:border-gray-700">
               <p className="font-semibold mb-1">Output Structure:</p>
               <div className="font-mono text-muted">
                 {'{'}<br/>
-                &nbsp;&nbsp;response: string,<br/>
-                &nbsp;&nbsp;parsed: any,<br/>
+                {step.type === 'ai-router' ? (
+                  <>
+                    &nbsp;&nbsp;branch: string,<br/>
+                    &nbsp;&nbsp;reasoning: string,<br/>
+                    &nbsp;&nbsp;allRoutes: string[],<br/>
+                  </>
+                ) : (
+                  <>
+                    &nbsp;&nbsp;response: string,<br/>
+                    &nbsp;&nbsp;parsed: any,<br/>
+                  </>
+                )}
                 &nbsp;&nbsp;model: string,<br/>
                 &nbsp;&nbsp;usage: {'{ promptTokens, completionTokens, totalTokens }'}<br/>
                 {step.type === 'ai-agent' && <>&nbsp;&nbsp;toolCalls: array,<br/>&nbsp;&nbsp;iterations: number,<br/></>}

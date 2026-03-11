@@ -83,7 +83,8 @@ export type StepType =
   | 'connector-db'
   | 'ai-prompt'
   | 'ai-structured-output'
-  | 'ai-agent';
+  | 'ai-agent'
+  | 'ai-router';
 
 export interface StepConfig {
   code?: string;
@@ -127,6 +128,7 @@ export interface StepConfig {
   aiOutputSchema?: Record<string, any>;
   aiTools?: Array<{ type: string; function: { name: string; description: string; parameters: Record<string, any> } }>;
   aiMaxIterations?: number;
+  aiRoutes?: Array<{ branchId: string; description: string }>;
 }
 
 export interface VariableMapping {
@@ -251,4 +253,5 @@ export const STEP_TYPE_INFO: Record<StepType, { label: string; icon: string; col
   'ai-prompt': { label: 'AI Prompt', icon: '🤖', color: '#8b5cf6' },
   'ai-structured-output': { label: 'AI Structured Output', icon: '📋', color: '#6366f1' },
   'ai-agent': { label: 'AI Agent', icon: '🧠', color: '#a855f7' },
+  'ai-router': { label: 'AI Router', icon: '🔀', color: '#7c3aed' },
 };

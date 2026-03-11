@@ -60,10 +60,22 @@ export default function StepCanvas({
   // Create edges: use persisted station.edges if available, else auto-connect by order
   const initialEdges = useMemo(() => {
     if (station.edges && station.edges.length > 0) {
+      const routerColors = ['#8b5cf6', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#84cc16'];
       return station.edges.map((edge) => {
         const isTrue = edge.sourceHandle === 'true';
         const isFalse = edge.sourceHandle === 'false';
-        const color = isTrue ? '#22c55e' : isFalse ? '#ef4444' : '#22c55e';
+        // Check if this edge comes from an ai-router step
+        const sourceStep = station.steps.find(s => s.id === edge.source);
+        const isRouter = sourceStep?.type === 'ai-router';
+        let color = isTrue ? '#22c55e' : isFalse ? '#ef4444' : '#22c55e';
+        let label: string | undefined = isTrue ? 'T' : isFalse ? 'F' : undefined;
+        if (isRouter && edge.sourceHandle && sourceStep?.config.aiRoutes) {
+          const routeIdx = sourceStep.config.aiRoutes.findIndex(r => r.branchId === edge.sourceHandle);
+          if (routeIdx >= 0) {
+            color = routerColors[routeIdx % routerColors.length];
+            label = edge.sourceHandle;
+          }
+        }
         return {
           id: edge.id,
           source: edge.source,
@@ -72,7 +84,7 @@ export default function StepCanvas({
           type: 'smoothstep',
           animated: isSimulating,
           style: { stroke: color, strokeWidth: 2 },
-          label: isTrue ? 'T' : isFalse ? 'F' : undefined,
+          label,
           labelStyle: { fill: color, fontWeight: 700, fontSize: 12 },
           markerEnd: {
             type: MarkerType.ArrowClosed,
@@ -122,14 +134,25 @@ export default function StepCanvas({
       if (params.source && params.target) {
         const isTrue = params.sourceHandle === 'true';
         const isFalse = params.sourceHandle === 'false';
-        const color = isTrue ? '#22c55e' : isFalse ? '#ef4444' : '#22c55e';
+        const sourceStep = station.steps.find(s => s.id === params.source);
+        const isRouter = sourceStep?.type === 'ai-router';
+        const routerColors = ['#8b5cf6', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#84cc16'];
+        let color = isTrue ? '#22c55e' : isFalse ? '#ef4444' : '#22c55e';
+        let label: string | undefined = isTrue ? 'T' : isFalse ? 'F' : undefined;
+        if (isRouter && params.sourceHandle && sourceStep?.config.aiRoutes) {
+          const routeIdx = sourceStep.config.aiRoutes.findIndex(r => r.branchId === params.sourceHandle);
+          if (routeIdx >= 0) {
+            color = routerColors[routeIdx % routerColors.length];
+            label = params.sourceHandle;
+          }
+        }
 
         setEdges((eds) => addEdge({
           ...params,
           type: 'smoothstep',
           animated: isSimulating,
           style: { stroke: color, strokeWidth: 2 },
-          label: isTrue ? 'T' : isFalse ? 'F' : undefined,
+          label,
           labelStyle: { fill: color, fontWeight: 700, fontSize: 12 },
           markerEnd: {
             type: MarkerType.ArrowClosed,

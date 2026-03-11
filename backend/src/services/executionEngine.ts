@@ -335,7 +335,7 @@ export class ExecutionEngine {
         // Find next steps based on edges
         const outEdges = station.edges!.filter(e => e.source === stepId);
 
-        if (step.type === 'if-else' && stepResult.output?.branch) {
+        if ((step.type === 'if-else' || step.type === 'ai-router') && stepResult.output?.branch) {
           const branch = stepResult.output.branch as string;
           const nextEdges = outEdges.filter(e => e.sourceHandle === branch);
           for (const edge of nextEdges) {

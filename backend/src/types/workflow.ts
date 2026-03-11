@@ -88,7 +88,8 @@ export type StepType =
   | 'connector-db'
   | 'ai-prompt'
   | 'ai-structured-output'
-  | 'ai-agent';
+  | 'ai-agent'
+  | 'ai-router';
 
 export interface StepConfig {
   // Script nodes
@@ -147,6 +148,7 @@ export interface StepConfig {
   aiOutputSchema?: Record<string, any>;
   aiTools?: Array<{ type: string; function: { name: string; description: string; parameters: Record<string, any> } }>;
   aiMaxIterations?: number;
+  aiRoutes?: Array<{ branchId: string; description: string }>;
 }
 
 export interface VariableMapping {

@@ -307,4 +307,93 @@ export class AiExecutor {
       };
     }
   }
+
+  /**
+   * AI Router - LLM-based multi-branch routing decision
+   */
+  static async executeRouter(
+    config: StepConfig,
+    inputContext: Record<string, any>
+  ): Promise<ScriptResult> {
+    const logs: string[] = [];
+    try {
+      const client = this.createClient(config);
+      const prompt = ScriptRunner.interpolateVariables(config.aiPrompt || '', inputContext);
+
+      // Build route descriptions for the LLM
+      const routes = config.aiRoutes || [];
+      const routeDescriptions = routes
+        .map((r: any) => `- "${r.branchId}": ${r.description}`)
+        .join('\n');
+      const validBranchIds = routes.map((r: any) => r.branchId);
+
+      const systemPrompt = ScriptRunner.interpolateVariables(
+        config.aiSystemPrompt || 'You are a routing assistant. Analyze the input and decide which route to take.',
+        inputContext
+      );
+
+      const messages: OpenAI.ChatCompletionMessageParam[] = [
+        {
+          role: 'system',
+          content: `${systemPrompt}\n\nAvailable routes:\n${routeDescriptions}\n\nRespond with a JSON object: { "branch": "<branchId>", "reasoning": "<brief explanation>" }\nYou MUST pick exactly one of the available branch IDs.`
+        },
+        { role: 'user', content: prompt },
+      ];
+
+      logs.push(`Routing decision via ${config.aiBaseUrl} (model: ${config.aiModel}, ${routes.length} routes)`);
+
+      const completion = await client.chat.completions.create({
+        model: config.aiModel || 'default',
+        messages,
+        temperature: config.aiTemperature ?? 0.3,
+        max_tokens: config.aiMaxTokens ?? 256,
+        response_format: { type: 'json_object' },
+      });
+
+      const raw = completion.choices[0]?.message?.content || '{}';
+      const usage = completion.usage;
+
+      let parsed: { branch?: string; reasoning?: string };
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        logs.push('Warning: LLM response is not valid JSON, using first route as fallback');
+        parsed = { branch: validBranchIds[0], reasoning: 'Fallback: could not parse LLM response' };
+      }
+
+      // Validate branch
+      const branch = parsed.branch || validBranchIds[0];
+      if (!validBranchIds.includes(branch)) {
+        logs.push(`Warning: LLM chose "${branch}" which is not a valid route, using first route as fallback`);
+        parsed.branch = validBranchIds[0];
+        parsed.reasoning = `Fallback: LLM chose invalid route "${branch}"`;
+      }
+
+      const finalBranch = parsed.branch || validBranchIds[0];
+      logs.push(`Route selected: "${finalBranch}" - ${parsed.reasoning || 'no reasoning provided'}`);
+
+      return {
+        success: true,
+        output: {
+          branch: finalBranch,
+          reasoning: parsed.reasoning || '',
+          allRoutes: validBranchIds,
+          model: completion.model,
+          usage: usage ? {
+            promptTokens: usage.prompt_tokens,
+            completionTokens: usage.completion_tokens,
+            totalTokens: usage.total_tokens,
+          } : undefined,
+        },
+        logs,
+      };
+    } catch (error: any) {
+      log.error(`AI Router failed: ${error.message}`);
+      return {
+        success: false,
+        error: `AI Router failed: ${error.message}`,
+        logs,
+      };
+    }
+  }
 }
