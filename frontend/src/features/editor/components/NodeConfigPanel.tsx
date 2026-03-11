@@ -52,6 +52,21 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
   const [dbPassword, setDbPassword] = useState(step.config.dbPassword || '');
   const [dbQuery, setDbQuery] = useState(step.config.dbQuery || '');
 
+  // AI fields
+  const [aiBaseUrl, setAiBaseUrl] = useState(step.config.aiBaseUrl || '');
+  const [aiApiKey, setAiApiKey] = useState(step.config.aiApiKey || '');
+  const [aiModel, setAiModel] = useState(step.config.aiModel || '');
+  const [aiPrompt, setAiPrompt] = useState(step.config.aiPrompt || '');
+  const [aiSystemPrompt, setAiSystemPrompt] = useState(step.config.aiSystemPrompt || '');
+  const [aiTemperature, setAiTemperature] = useState(step.config.aiTemperature ?? 0.7);
+  const [aiMaxTokens, setAiMaxTokens] = useState(step.config.aiMaxTokens ?? 2048);
+  const [aiHeaders, setAiHeaders] = useState<{key: string, value: string}[]>(
+    step.config.aiHeaders ? Object.entries(step.config.aiHeaders).map(([key, value]) => ({ key, value })) : []
+  );
+  const [aiOutputSchema, setAiOutputSchema] = useState(step.config.aiOutputSchema ? JSON.stringify(step.config.aiOutputSchema, null, 2) : '');
+  const [aiToolsJson, setAiToolsJson] = useState(step.config.aiTools ? JSON.stringify(step.config.aiTools, null, 2) : '');
+  const [aiMaxIterations, setAiMaxIterations] = useState(step.config.aiMaxIterations || 10);
+
   // Picker state
   const [activePicker, setActivePicker] = useState<string | null>(null);
 
@@ -92,6 +107,17 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
     setMaxAttempts(step.retryPolicy?.maxAttempts || 3);
     setInitialInterval(step.retryPolicy?.initialInterval || 1000);
     setBackoffCoefficient(step.retryPolicy?.backoffCoefficient || 2);
+    setAiBaseUrl(step.config.aiBaseUrl || '');
+    setAiApiKey(step.config.aiApiKey || '');
+    setAiModel(step.config.aiModel || '');
+    setAiPrompt(step.config.aiPrompt || '');
+    setAiSystemPrompt(step.config.aiSystemPrompt || '');
+    setAiTemperature(step.config.aiTemperature ?? 0.7);
+    setAiMaxTokens(step.config.aiMaxTokens ?? 2048);
+    setAiHeaders(step.config.aiHeaders ? Object.entries(step.config.aiHeaders).map(([key, value]) => ({ key, value })) : []);
+    setAiOutputSchema(step.config.aiOutputSchema ? JSON.stringify(step.config.aiOutputSchema, null, 2) : '');
+    setAiToolsJson(step.config.aiTools ? JSON.stringify(step.config.aiTools, null, 2) : '');
+    setAiMaxIterations(step.config.aiMaxIterations || 10);
   }, [step]);
 
   const handleSave = () => {
@@ -142,6 +168,39 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         config.dbUser = dbUser;
         config.dbPassword = dbPassword;
         config.dbQuery = dbQuery;
+        break;
+      case 'ai-prompt':
+        config.aiBaseUrl = aiBaseUrl;
+        config.aiApiKey = aiApiKey;
+        config.aiModel = aiModel;
+        config.aiPrompt = aiPrompt;
+        config.aiSystemPrompt = aiSystemPrompt;
+        config.aiTemperature = Number(aiTemperature);
+        config.aiMaxTokens = Number(aiMaxTokens);
+        config.aiHeaders = aiHeaders.length > 0 ? Object.fromEntries(aiHeaders.filter(h => h.key).map(h => [h.key, h.value])) : undefined;
+        break;
+      case 'ai-structured-output':
+        config.aiBaseUrl = aiBaseUrl;
+        config.aiApiKey = aiApiKey;
+        config.aiModel = aiModel;
+        config.aiPrompt = aiPrompt;
+        config.aiSystemPrompt = aiSystemPrompt;
+        config.aiTemperature = Number(aiTemperature);
+        config.aiMaxTokens = Number(aiMaxTokens);
+        config.aiHeaders = aiHeaders.length > 0 ? Object.fromEntries(aiHeaders.filter(h => h.key).map(h => [h.key, h.value])) : undefined;
+        try { config.aiOutputSchema = aiOutputSchema ? JSON.parse(aiOutputSchema) : undefined; } catch { /* keep existing */ }
+        break;
+      case 'ai-agent':
+        config.aiBaseUrl = aiBaseUrl;
+        config.aiApiKey = aiApiKey;
+        config.aiModel = aiModel;
+        config.aiPrompt = aiPrompt;
+        config.aiSystemPrompt = aiSystemPrompt;
+        config.aiTemperature = Number(aiTemperature);
+        config.aiMaxTokens = Number(aiMaxTokens);
+        config.aiHeaders = aiHeaders.length > 0 ? Object.fromEntries(aiHeaders.filter(h => h.key).map(h => [h.key, h.value])) : undefined;
+        try { config.aiTools = aiToolsJson ? JSON.parse(aiToolsJson) : undefined; } catch { /* keep existing */ }
+        config.aiMaxIterations = Number(aiMaxIterations);
         break;
     }
 
@@ -747,6 +806,233 @@ print(json.dumps({'result': result}))`}
               <p className="text-xs text-muted mt-2">
                 Use <code>{'${variable}'}</code> syntax for dynamic values.
               </p>
+            </div>
+          </>
+        );
+
+      case 'ai-prompt':
+      case 'ai-structured-output':
+      case 'ai-agent':
+        return (
+          <>
+            {/* Connection */}
+            <div className="form-group">
+              <label className="form-label">Base URL (vLLM Server)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={aiBaseUrl}
+                onChange={(e) => setAiBaseUrl(e.target.value)}
+                placeholder="http://localhost:8000/v1"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">API Key (optional)</label>
+              <input
+                type="password"
+                className="form-input"
+                value={aiApiKey}
+                onChange={(e) => setAiApiKey(e.target.value)}
+                placeholder="Leave empty if not required"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Model</label>
+              <input
+                type="text"
+                className="form-input"
+                value={aiModel}
+                onChange={(e) => setAiModel(e.target.value)}
+                placeholder="meta-llama/Llama-3-8B-Instruct"
+              />
+            </div>
+
+            {/* Headers */}
+            <div className="form-group">
+              <div className="flex justify-between items-center mb-2">
+                <label className="form-label">Headers (Auth)</label>
+                <button
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => setAiHeaders([...aiHeaders, { key: '', value: '' }])}
+                >
+                  + Add Header
+                </button>
+              </div>
+              {aiHeaders.length === 0 ? (
+                <p className="text-xs text-muted italic">No custom headers configured.</p>
+              ) : (
+                <div className="space-y-2">
+                  {aiHeaders.map((header, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Header Name"
+                        value={header.key}
+                        onChange={(e) => {
+                          const newHeaders = [...aiHeaders];
+                          newHeaders[idx].key = e.target.value;
+                          setAiHeaders(newHeaders);
+                        }}
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Value"
+                        value={header.value}
+                        onChange={(e) => {
+                          const newHeaders = [...aiHeaders];
+                          newHeaders[idx].value = e.target.value;
+                          setAiHeaders(newHeaders);
+                        }}
+                        style={{ flex: 2 }}
+                      />
+                      <button
+                        className="btn btn-ghost btn-icon btn-xs text-red-500"
+                        onClick={() => setAiHeaders(aiHeaders.filter((_, i) => i !== idx))}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* System Prompt */}
+            <div className="form-group">
+              <label className="form-label">System Prompt</label>
+              <textarea
+                className="form-textarea"
+                value={aiSystemPrompt}
+                onChange={(e) => setAiSystemPrompt(e.target.value)}
+                placeholder="You are a helpful assistant..."
+                style={{ minHeight: '80px' }}
+              />
+            </div>
+
+            {/* User Prompt */}
+            <div className="form-group">
+              <div className="flex justify-between items-center mb-1">
+                <label className="form-label">Prompt</label>
+                <button
+                  className="btn btn-ghost btn-xs flex gap-1 items-center"
+                  onClick={() => setActivePicker(activePicker === 'aiPrompt' ? null : 'aiPrompt')}
+                >
+                  <Database size={10} /> Insert Variable
+                </button>
+              </div>
+              <textarea
+                className="form-textarea"
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                placeholder={'Analyze the following data: ${previousStep.output.data}'}
+                style={{ minHeight: '120px' }}
+              />
+              {activePicker === 'aiPrompt' && (
+                <div className="mt-2">
+                  <VariablePicker
+                    workflow={workflow}
+                    currentStepId={step.id}
+                    onSelect={(v) => {
+                      setAiPrompt(aiPrompt + v);
+                      setActivePicker(null);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Temperature & Max Tokens */}
+            <div className="flex gap-4">
+              <div className="form-group flex-1">
+                <label className="form-label">Temperature</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={aiTemperature}
+                  onChange={(e) => setAiTemperature(Number(e.target.value))}
+                  min={0}
+                  max={2}
+                  step={0.1}
+                />
+              </div>
+              <div className="form-group flex-1">
+                <label className="form-label">Max Tokens</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={aiMaxTokens}
+                  onChange={(e) => setAiMaxTokens(Number(e.target.value))}
+                  min={1}
+                  max={128000}
+                />
+              </div>
+            </div>
+
+            {/* Structured Output Schema (only for ai-structured-output) */}
+            {step.type === 'ai-structured-output' && (
+              <div className="form-group">
+                <label className="form-label">Output JSON Schema</label>
+                <textarea
+                  className="form-textarea"
+                  value={aiOutputSchema}
+                  onChange={(e) => setAiOutputSchema(e.target.value)}
+                  placeholder={'{\n  "type": "object",\n  "properties": {\n    "sentiment": { "type": "string" },\n    "score": { "type": "number" }\n  },\n  "required": ["sentiment", "score"]\n}'}
+                  style={{ minHeight: '160px', fontFamily: 'monospace' }}
+                />
+                <p className="text-xs text-muted mt-2">
+                  JSON Schema that the LLM response must conform to.
+                </p>
+              </div>
+            )}
+
+            {/* Agent Tools (only for ai-agent) */}
+            {step.type === 'ai-agent' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Tools (JSON Array)</label>
+                  <textarea
+                    className="form-textarea"
+                    value={aiToolsJson}
+                    onChange={(e) => setAiToolsJson(e.target.value)}
+                    placeholder={'[\n  {\n    "type": "function",\n    "function": {\n      "name": "search",\n      "description": "Search for information",\n      "parameters": {\n        "type": "object",\n        "properties": {\n          "query": { "type": "string" }\n        },\n        "required": ["query"]\n      }\n    }\n  }\n]'}
+                    style={{ minHeight: '180px', fontFamily: 'monospace' }}
+                  />
+                  <p className="text-xs text-muted mt-2">
+                    OpenAI-compatible tool definitions. The agent will loop until done or max iterations reached.
+                  </p>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Max Iterations</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={aiMaxIterations}
+                    onChange={(e) => setAiMaxIterations(Number(e.target.value))}
+                    min={1}
+                    max={50}
+                  />
+                  <p className="text-xs text-muted mt-2">
+                    Maximum number of tool-call rounds before stopping.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* Output info */}
+            <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded text-xs border border-gray-200 dark:border-gray-700">
+              <p className="font-semibold mb-1">Output Structure:</p>
+              <div className="font-mono text-muted">
+                {'{'}<br/>
+                &nbsp;&nbsp;response: string,<br/>
+                &nbsp;&nbsp;parsed: any,<br/>
+                &nbsp;&nbsp;model: string,<br/>
+                &nbsp;&nbsp;usage: {'{ promptTokens, completionTokens, totalTokens }'}<br/>
+                {step.type === 'ai-agent' && <>&nbsp;&nbsp;toolCalls: array,<br/>&nbsp;&nbsp;iterations: number,<br/></>}
+                {'}'}
+              </div>
             </div>
           </>
         );

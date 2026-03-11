@@ -80,7 +80,10 @@ export type StepType =
   | 'trigger-webhook'
   | 'action-email'
   | 'action-slack'
-  | 'connector-db';
+  | 'connector-db'
+  | 'ai-prompt'
+  | 'ai-structured-output'
+  | 'ai-agent';
 
 export interface StepConfig {
   code?: string;
@@ -112,6 +115,18 @@ export interface StepConfig {
   dbUser?: string;
   dbPassword?: string;
   dbQuery?: string;
+  // AI fields
+  aiBaseUrl?: string;
+  aiApiKey?: string;
+  aiModel?: string;
+  aiPrompt?: string;
+  aiSystemPrompt?: string;
+  aiTemperature?: number;
+  aiMaxTokens?: number;
+  aiHeaders?: Record<string, string>;
+  aiOutputSchema?: Record<string, any>;
+  aiTools?: Array<{ type: string; function: { name: string; description: string; parameters: Record<string, any> } }>;
+  aiMaxIterations?: number;
 }
 
 export interface VariableMapping {
@@ -233,4 +248,7 @@ export const STEP_TYPE_INFO: Record<StepType, { label: string; icon: string; col
   'action-email': { label: 'Send Email', icon: '📧', color: '#3b82f6' },
   'action-slack': { label: 'Slack Message', icon: '💬', color: '#4a154b' },
   'connector-db': { label: 'Database Query', icon: '🗄️', color: '#0ea5e9' },
+  'ai-prompt': { label: 'AI Prompt', icon: '🤖', color: '#8b5cf6' },
+  'ai-structured-output': { label: 'AI Structured Output', icon: '📋', color: '#6366f1' },
+  'ai-agent': { label: 'AI Agent', icon: '🧠', color: '#a855f7' },
 };

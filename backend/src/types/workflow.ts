@@ -85,7 +85,10 @@ export type StepType =
   | 'notification-slack'
   | 'action-email'
   | 'action-slack'
-  | 'connector-db';
+  | 'connector-db'
+  | 'ai-prompt'
+  | 'ai-structured-output'
+  | 'ai-agent';
 
 export interface StepConfig {
   // Script nodes
@@ -131,6 +134,19 @@ export interface StepConfig {
   dbUser?: string;
   dbPassword?: string;
   dbQuery?: string;
+
+  // AI fields
+  aiBaseUrl?: string;
+  aiApiKey?: string;
+  aiModel?: string;
+  aiPrompt?: string;
+  aiSystemPrompt?: string;
+  aiTemperature?: number;
+  aiMaxTokens?: number;
+  aiHeaders?: Record<string, string>;
+  aiOutputSchema?: Record<string, any>;
+  aiTools?: Array<{ type: string; function: { name: string; description: string; parameters: Record<string, any> } }>;
+  aiMaxIterations?: number;
 }
 
 export interface VariableMapping {

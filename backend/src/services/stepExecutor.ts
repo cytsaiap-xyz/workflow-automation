@@ -1,6 +1,7 @@
 import { Step } from '../types/workflow';
 import { ScriptRunner, ScriptResult } from './scriptRunner';
 import { DbConnectorService } from './dbConnector';
+import { AiExecutor } from './aiExecutor';
 import nodemailer from 'nodemailer';
 
 // Initialize email transporter
@@ -226,6 +227,42 @@ export class StepExecutor {
             logs: [`Database error: ${err.message}`]
           };
         }
+      }
+
+      case 'ai-prompt': {
+        if (context.simulate) {
+          const prompt = ScriptRunner.interpolateVariables(step.config.aiPrompt || '', { ...context.variables, inputData: resolvedInput });
+          return {
+            success: true,
+            output: { simulated: true, prompt, model: step.config.aiModel },
+            logs: ['[SIMULATE] AI Prompt skipped']
+          };
+        }
+        return AiExecutor.executePrompt(step.config, { ...context.variables, inputData: resolvedInput });
+      }
+
+      case 'ai-structured-output': {
+        if (context.simulate) {
+          const prompt = ScriptRunner.interpolateVariables(step.config.aiPrompt || '', { ...context.variables, inputData: resolvedInput });
+          return {
+            success: true,
+            output: { simulated: true, prompt, model: step.config.aiModel, schema: step.config.aiOutputSchema },
+            logs: ['[SIMULATE] AI Structured Output skipped']
+          };
+        }
+        return AiExecutor.executeStructuredOutput(step.config, { ...context.variables, inputData: resolvedInput });
+      }
+
+      case 'ai-agent': {
+        if (context.simulate) {
+          const prompt = ScriptRunner.interpolateVariables(step.config.aiPrompt || '', { ...context.variables, inputData: resolvedInput });
+          return {
+            success: true,
+            output: { simulated: true, prompt, model: step.config.aiModel, tools: step.config.aiTools?.length || 0 },
+            logs: ['[SIMULATE] AI Agent skipped']
+          };
+        }
+        return AiExecutor.executeAgent(step.config, { ...context.variables, inputData: resolvedInput });
       }
 
       default:

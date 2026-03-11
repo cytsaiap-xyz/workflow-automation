@@ -14,6 +14,9 @@ const VALID_STEP_TYPES = [
   'action-email',
   'action-slack',
   'connector-db',
+  'ai-prompt',
+  'ai-structured-output',
+  'ai-agent',
 ] as const;
 
 const VALID_STATUSES = ['draft', 'active', 'paused'] as const;
