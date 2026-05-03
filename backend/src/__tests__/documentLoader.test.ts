@@ -53,4 +53,31 @@ describe('documentLoader', () => {
       expect(fs.existsSync(out[0].imagePath!)).toBe(true);
     });
   });
+
+  describe('PPTX', () => {
+    it('extracts text from a PPTX file', async () => {
+      const out = await loadDocument(path.join(fixtures, 'sample.pptx'), {
+        executionId: 'exec-pptx-1',
+        maxChunkChars: 10000,
+      });
+      // We allow either per-slide pages or a single concatenated chunk.
+      expect(out.length).toBeGreaterThanOrEqual(1);
+      const allText = out.map(p => p.text).join(' ');
+      expect(allText).toContain('Concept slide');
+      expect(allText).toContain('Usage slide');
+    });
+
+    it('imagePath is either null or a real PNG file', async () => {
+      const out = await loadDocument(path.join(fixtures, 'sample.pptx'), {
+        executionId: 'exec-pptx-2',
+        maxChunkChars: 10000,
+      });
+      const fsSync = await import('fs');
+      for (const p of out) {
+        if (p.imagePath !== null) {
+          expect(fsSync.existsSync(p.imagePath)).toBe(true);
+        }
+      }
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import path from 'path';
 import { loadTxt } from './txt';
 import { loadPdf } from './pdf';
+import { loadPptx } from './pptx';
 import { applyHybridChunking, RawPage } from '../hybridChunking';
 
 export interface LoadDocumentOptions {
@@ -22,7 +23,8 @@ export async function loadDocument(
       raw = await loadPdf(filePath, opts.executionId);
       break;
     case '.pptx':
-      throw new Error('PPTX loader not yet implemented');
+      raw = await loadPptx(filePath, opts.executionId);
+      break;
     default:
       throw new Error(`Unsupported document extension: ${ext}`);
   }
