@@ -3,6 +3,7 @@ import { scheduler } from './services/scheduler';
 import { initDatabase } from './db/database';
 import { createLogger } from './utils/logger';
 import { seedAiProvider } from './seeds/seedAiProvider';
+import { seedPromptTemplates } from './seeds/seedPromptTemplates';
 
 const log = createLogger('index');
 const PORT = process.env.PORT || 3002;
@@ -12,6 +13,7 @@ async function main() {
   await initDatabase();
   log.info('Database initialized');
   seedAiProvider();
+  seedPromptTemplates();
 
   const server = app.listen(PORT, async () => {
     log.info('Workflow Automation Backend running on http://localhost:%s', PORT);
