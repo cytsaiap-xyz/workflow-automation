@@ -73,7 +73,7 @@ export interface RetryPolicy {
   maxInterval?: number;
 }
 
-export type StepType = 
+export type StepType =
   | 'trigger-manual'
   | 'trigger-cron'
   | 'trigger-webhook'
@@ -90,7 +90,9 @@ export type StepType =
   | 'ai-prompt'
   | 'ai-structured-output'
   | 'ai-agent'
-  | 'ai-router';
+  | 'ai-router'
+  | 'load-document'
+  | 'quiz-output-writer';
 
 export interface StepConfig {
   // Script nodes
@@ -150,6 +152,19 @@ export interface StepConfig {
   aiTools?: Array<{ type: string; function: { name: string; description: string; parameters: Record<string, any> } }>;
   aiMaxIterations?: number;
   aiRoutes?: Array<{ branchId: string; description: string }>;
+
+  // Provider / template references (Spec 1)
+  aiProviderId?: string;
+  aiPromptTemplateSystemId?: string;
+  aiPromptTemplateUserId?: string;
+
+  // load-document step
+  loadDocumentSourcePath?: string;
+  loadDocumentMaxChunkChars?: number;
+
+  // quiz-output-writer step
+  quizOutputDirectory?: string;
+  quizOutputFilename?: string;
 }
 
 export interface VariableMapping {
