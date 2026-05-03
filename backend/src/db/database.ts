@@ -134,6 +134,34 @@ const SCHEMA_SQL = `
   );
 
   CREATE INDEX IF NOT EXISTS idx_versions_workflow_id ON workflow_versions(workflow_id, version DESC);
+
+  CREATE TABLE IF NOT EXISTS ai_providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    model TEXT NOT NULL,
+    api_key TEXT,
+    headers TEXT,
+    supports_vision INTEGER DEFAULT 0,
+    is_default INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS prompt_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('system','user')),
+    content TEXT NOT NULL,
+    description TEXT,
+    requires_vision INTEGER DEFAULT 0,
+    tags TEXT,
+    builtin INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_prompt_templates_tags ON prompt_templates(tags);
 `;
 
 export async function initDatabase(): Promise<void> {
