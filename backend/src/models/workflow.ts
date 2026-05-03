@@ -38,15 +38,15 @@ export class WorkflowModel {
     return row ? this.rowToWorkflow(row) : null;
   }
 
-  static create(data: CreateWorkflowRequest): Workflow {
-    const id = uuidv4();
+  static create(data: CreateWorkflowRequest & { id?: string }): Workflow {
+    const id = data.id ?? uuidv4();
     const now = new Date().toISOString();
-    
+
     const stmt = db.prepare(`
       INSERT INTO workflows (id, name, description, status, definition, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    
+
     stmt.run(
       id,
       data.name,
