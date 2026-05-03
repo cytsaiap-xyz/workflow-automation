@@ -303,6 +303,31 @@ export class StepExecutor {
         }
       }
 
+      case 'quiz-output-writer': {
+        const { writeQuizOutput } = await import('./quizOutputWriter');
+        try {
+          const out = await writeQuizOutput(
+            {
+              questions: resolvedInput.questions,
+              sourceFile: resolvedInput.sourceFile,
+              focusArea: resolvedInput.focusArea,
+            },
+            {
+              executionId: context.variables.executionId || 'unknown',
+              directory: step.config.quizOutputDirectory,
+              filename: step.config.quizOutputFilename,
+            }
+          );
+          return {
+            success: true,
+            output: { filePath: out.filePath, json: out.json },
+            logs: [`Wrote quiz JSON to ${out.filePath}`],
+          };
+        } catch (e: any) {
+          return { success: false, error: `quiz-output-writer failed: ${e.message}`, logs: [] };
+        }
+      }
+
       default:
         return {
           success: false,
