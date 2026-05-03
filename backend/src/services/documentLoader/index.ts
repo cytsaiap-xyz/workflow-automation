@@ -1,5 +1,6 @@
 import path from 'path';
 import { loadTxt } from './txt';
+import { loadPdf } from './pdf';
 import { applyHybridChunking, RawPage } from '../hybridChunking';
 
 export interface LoadDocumentOptions {
@@ -18,7 +19,8 @@ export async function loadDocument(
       raw = await loadTxt(filePath);
       break;
     case '.pdf':
-      throw new Error('PDF loader not yet implemented');
+      raw = await loadPdf(filePath, opts.executionId);
+      break;
     case '.pptx':
       throw new Error('PPTX loader not yet implemented');
     default:

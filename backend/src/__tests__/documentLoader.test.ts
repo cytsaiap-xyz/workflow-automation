@@ -17,4 +17,18 @@ describe('documentLoader', () => {
       expect(out[0].imagePath).toBeNull();
     });
   });
+
+  describe('PDF', () => {
+    it('loads each page with its text', async () => {
+      const out = await loadDocument(path.join(fixtures, 'sample.pdf'), {
+        executionId: 'exec-pdf-1',
+        maxChunkChars: 10000,
+      });
+      expect(out.length).toBeGreaterThanOrEqual(2);
+      expect(out[0].pageId).toBe('page-1');
+      expect(out[0].text).toContain('Concepts page');
+      expect(out[1].pageId).toBe('page-2');
+      expect(out[1].text).toContain('Usage page');
+    });
+  });
 });
