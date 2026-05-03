@@ -18,10 +18,11 @@ export interface WorkflowDefinition {
 
 export interface InputParameter {
   name: string;
-  type: 'string' | 'number' | 'boolean' | 'json';
+  type: 'string' | 'number' | 'boolean' | 'json' | 'file';
   description?: string;
   defaultValue?: any;
   required?: boolean;
+  accept?: string;
 }
 
 export interface Station {
