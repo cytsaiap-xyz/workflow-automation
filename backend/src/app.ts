@@ -7,6 +7,7 @@ import scheduleRoutes from './routes/schedules';
 import metricsRoutes from './routes/metrics';
 import webhookRoutes from './routes/webhooks';
 import aiProvidersRouter from './routes/aiProviders';
+import promptTemplatesRouter from './routes/promptTemplates';
 import { requestLogger, createLogger } from './utils/logger';
 
 const log = createLogger('app');
@@ -30,6 +31,7 @@ app.use('/api/schedules', scheduleRoutes);
 app.use('/api/metrics', metricsRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/ai-providers', aiProvidersRouter);
+app.use('/api/prompt-templates', promptTemplatesRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
