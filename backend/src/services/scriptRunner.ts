@@ -5,6 +5,7 @@ import * as https from 'https';
 import { URL } from 'url';
 import { StepConfig } from '../types/workflow';
 import { createLogger } from '../utils/logger';
+import { getEnvAllowlist, isHostAllowed } from './httpAllowlist';
 
 const log = createLogger('scriptRunner');
 
@@ -172,6 +173,15 @@ ${code}
 
       if (body) {
         body = this.interpolateVariables(body, inputData);
+      }
+
+      const allowlist = getEnvAllowlist();
+      if (!isHostAllowed(url, allowlist)) {
+        return {
+          success: false,
+          error: `URL host blocked by HTTP_ALLOWLIST: ${url}. Update HTTP_ALLOWLIST env to permit.`,
+          logs: [`Blocked outbound request to ${url}`],
+        };
       }
 
       logs.push(`Making ${method} request to ${url}`);
