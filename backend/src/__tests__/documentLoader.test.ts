@@ -1,10 +1,22 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import path from 'path';
-import { loadDocument } from '../services/documentLoader';
+import os from 'os';
+import fs from 'fs';
+
+// Set UPLOADS_DIR before any module that imports uploadHandler is loaded
+const tmpUploads = fs.mkdtempSync(path.join(os.tmpdir(), 'qg-pdfimg-'));
+process.env.UPLOADS_DIR = tmpUploads;
+
+// Dynamic import so the env var takes effect before uploadHandler is imported
+let loadDocument: typeof import('../services/documentLoader').loadDocument;
 
 const fixtures = path.join(__dirname, 'fixtures');
 
 describe('documentLoader', () => {
+  beforeAll(async () => {
+    loadDocument = (await import('../services/documentLoader')).loadDocument;
+  });
+
   describe('TXT', () => {
     it('loads a TXT file as a single chunk-1', async () => {
       const out = await loadDocument(path.join(fixtures, 'sample.txt'), {
@@ -29,6 +41,16 @@ describe('documentLoader', () => {
       expect(out[0].text).toContain('Concepts page');
       expect(out[1].pageId).toBe('page-2');
       expect(out[1].text).toContain('Usage page');
+    });
+
+    it('rasterizes each page to a PNG file', async () => {
+      const out = await loadDocument(path.join(fixtures, 'sample.pdf'), {
+        executionId: 'exec-pdf-img',
+        maxChunkChars: 10000,
+      });
+      expect(out[0].imagePath).toBeTruthy();
+      expect(out[0].imagePath).toMatch(/page-1\.png$/);
+      expect(fs.existsSync(out[0].imagePath!)).toBe(true);
     });
   });
 });
