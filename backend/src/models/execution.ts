@@ -53,17 +53,17 @@ export class ExecutionModel {
     return row ? this.rowToExecution(row) : null;
   }
 
-  static create(workflowId: string, workflowName: string, triggeredBy: Execution['triggeredBy']): Execution {
-    const id = uuidv4();
+  static create(workflowId: string, workflowName: string, triggeredBy: Execution['triggeredBy'], id?: string): Execution {
+    const resolvedId = id ?? uuidv4();
     const now = new Date().toISOString();
 
     const stmt = db.prepare(`
       INSERT INTO executions (id, workflow_id, workflow_name, status, triggered_by, start_time, success_rate)
       VALUES (?, ?, ?, 'running', ?, ?, 0)
     `);
-    stmt.run(id, workflowId, workflowName, triggeredBy, now);
+    stmt.run(resolvedId, workflowId, workflowName, triggeredBy, now);
 
-    return this.getById(id)!;
+    return this.getById(resolvedId)!;
   }
 
   static update(id: string, data: Partial<{

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { v4 as uuidv4 } from 'uuid';
 import { WorkflowModel } from '../models/workflow';
 import { ExecutionModel } from '../models/execution';
 import { VersionModel } from '../models/version';
@@ -138,62 +139,65 @@ router.delete('/:id', (req: Request, res: Response) => {
  * POST /api/workflows/:id/execute
  * Execute a workflow (supports both application/json and multipart/form-data)
  */
-router.post('/:id/execute', (req: Request, res: Response) => {
-  const workflow = WorkflowModel.getById(req.params.id);
-  if (!workflow) {
-    return res.status(404).json({ success: false, error: 'Workflow not found' });
-  }
+async function runExecute(req: Request, res: Response, fromMultipart: boolean): Promise<void> {
+  try {
+    const workflow = WorkflowModel.getById(req.params.id);
+    if (!workflow) {
+      res.status(404).json({ success: false, error: 'Workflow not found' });
+      return;
+    }
 
-  // Pre-create the execution record so multer can use the ID for the upload directory.
-  const preCreatedExecution = ExecutionModel.create(workflow.id, workflow.name, 'manual');
-  (req as any).executionId = preCreatedExecution.id;
+    const inputData: Record<string, any> = {};
+    let triggeredBy: ExecuteWorkflowRequest['triggeredBy'] = 'manual';
+
+    if (fromMultipart) {
+      Object.assign(inputData, req.body);
+      const files = (req.files as Express.Multer.File[]) || [];
+      for (const f of files) {
+        inputData[f.fieldname] = f.path;
+      }
+      triggeredBy = (req.body?.triggeredBy as ExecuteWorkflowRequest['triggeredBy']) ?? 'manual';
+    } else {
+      const body: ExecuteWorkflowRequest = req.body || {};
+      Object.assign(inputData, body.inputData ?? {});
+      triggeredBy = body.triggeredBy ?? 'manual';
+    }
+
+    const executionId = (req as any).executionId as string;
+
+    // INSERT the row only after inputs are successfully gathered.
+    ExecutionModel.create(workflow.id, workflow.name, triggeredBy, executionId);
+
+    const execution = await ExecutionEngine.executeWithId(executionId, workflow, triggeredBy, inputData);
+    res.json({ success: true, data: execution });
+  } catch (error: any) {
+    const status = error.message?.startsWith('Missing required input parameter') ? 400 : 500;
+    res.status(status).json({ success: false, error: error.message });
+  }
+}
+
+router.post('/:id/execute', async (req: Request, res: Response) => {
+  // Pre-allocate the ID so multer can use it for the upload directory; do NOT INSERT yet.
+  (req as any).executionId = uuidv4();
 
   const ct = (req.headers['content-type'] || '').toString();
 
   if (ct.startsWith('multipart/')) {
     // Multipart path — let multer parse the body and save files.
-    uploadMiddleware(req, res, async (err) => {
-      if (err) return res.status(400).json({ success: false, error: err.message });
-      try {
-        // Build inputData: non-file fields from req.body + uploaded file absolute paths.
-        const inputData: Record<string, any> = {};
-        Object.assign(inputData, req.body);
-        const files = (req.files as Express.Multer.File[]) || [];
-        for (const f of files) {
-          inputData[f.fieldname] = f.path;
+    return new Promise<void>(resolve => {
+      uploadMiddleware(req, res, async (err) => {
+        if (err) {
+          res.status(400).json({ success: false, error: err.message });
+          return resolve();
         }
-
-        const execution = await ExecutionEngine.executeWithId(
-          preCreatedExecution.id,
-          workflow,
-          'manual',
-          inputData,
-        );
-        res.json({ success: true, data: execution });
-      } catch (error: any) {
-        const status = error.message?.startsWith('Missing required input parameter') ? 400 : 500;
-        res.status(status).json({ success: false, error: error.message });
-      }
+        await runExecute(req, res, true);
+        resolve();
+      });
     });
-  } else {
-    // JSON (or no-body) path — req.body already parsed by express.json() middleware.
-    (async () => {
-      try {
-        const { triggeredBy = 'manual', inputData = {} }: ExecuteWorkflowRequest = req.body || {};
-
-        const execution = await ExecutionEngine.executeWithId(
-          preCreatedExecution.id,
-          workflow,
-          triggeredBy,
-          inputData,
-        );
-        res.json({ success: true, data: execution });
-      } catch (error: any) {
-        const status = error.message?.startsWith('Missing required input parameter') ? 400 : 500;
-        res.status(status).json({ success: false, error: error.message });
-      }
-    })();
   }
+
+  // JSON (or no-body) path — req.body already parsed by express.json() middleware.
+  await runExecute(req, res, false);
 });
 
 /**

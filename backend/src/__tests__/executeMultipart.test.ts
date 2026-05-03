@@ -4,8 +4,9 @@ import express from 'express';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import type { Express } from 'express';
 
-let app: express.Express;
+let app: Express;
 let workflowId: string;
 
 describe('POST /api/workflows/:id/execute (multipart)', () => {
@@ -51,5 +52,16 @@ describe('POST /api/workflows/:id/execute (multipart)', () => {
     expect(stepOutput.note).toBe('hello');
     expect(stepOutput.docPath).toMatch(/sample\.txt$/);
     expect(fs.existsSync(stepOutput.docPath)).toBe(true);
+  });
+
+  it('does not create an execution row on lookup failure', async () => {
+    const { ExecutionModel } = await import('../models/execution');
+    const before = ExecutionModel.getAll().length;
+    const res = await request(app)
+      .post('/api/workflows/nonexistent-workflow-id/execute')
+      .attach('doc', Buffer.from('irrelevant'), 'irrelevant.txt');
+    expect(res.status).toBe(404);
+    const after = ExecutionModel.getAll().length;
+    expect(after).toBe(before);
   });
 });
