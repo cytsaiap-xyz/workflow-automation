@@ -80,7 +80,7 @@ export class ExecutionEngine {
     const context: ExecutionContext = {
       executionId: execution.id,
       workflow,
-      variables: { ...inputData, input: { ...inputData } },
+      variables: { ...inputData, input: { ...inputData }, executionId: execution.id },
       stations: {},
       steps: {},
       logs: [],
