@@ -6,6 +6,7 @@ import { URL } from 'url';
 import { StepConfig } from '../types/workflow';
 import { createLogger } from '../utils/logger';
 import { getEnvAllowlist, isHostAllowed } from './httpAllowlist';
+import { aiCall } from './aiCallSandbox';
 
 const log = createLogger('scriptRunner');
 
@@ -48,22 +49,26 @@ export class ScriptRunner {
         decodeURIComponent,
         setTimeout: undefined, // Disabled for security
         setInterval: undefined,
-        fetch: undefined // Could enable if needed
+        fetch: undefined, // Could enable if needed
+        Promise,
+        ai: { call: aiCall },
       };
 
       const context = createContext(sandbox);
 
-      // Wrap code to capture return value
+      // Wrap code in async IIFE to support await (e.g. ai.call)
       const wrappedCode = `
-        (function() {
+        (async function() {
           ${code}
         })()
       `;
 
-      const result = runInContext(wrappedCode, context, {
+      const promiseResult = runInContext(wrappedCode, context, {
         timeout,
         displayErrors: true
       });
+
+      const result = await Promise.resolve(promiseResult);
 
       return {
         success: true,
