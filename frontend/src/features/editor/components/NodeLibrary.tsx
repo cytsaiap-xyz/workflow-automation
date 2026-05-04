@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Station, StepType } from '../../../shared/types/workflow';
 import { STEP_TYPE_INFO } from '../../../shared/types/workflow';
+import { useConfigStore } from '../../../shared/stores/configStore';
 import X from 'lucide-react/dist/esm/icons/x';
 import Search from 'lucide-react/dist/esm/icons/search';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down';
@@ -12,6 +13,8 @@ interface NodeLibraryProps {
   onAddStepToStation: (stationId: string, type: StepType) => void;
   onClose: () => void;
 }
+
+const HIDDEN_OFFLINE_TYPES: string[] = ['notification-slack', 'action-email', 'action-slack'];
 
 const NODE_CATEGORIES = {
   triggers: {
@@ -36,6 +39,7 @@ function NodeLibrary({ onAddStep, stations, onAddStepToStation, onClose }: NodeL
   const [search, setSearch] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['triggers', 'actions', 'flow', 'ai']);
   const [selectedStation, setSelectedStation] = useState<string>(stations[0]?.id || '');
+  const offlineMode = useConfigStore((s) => s.config?.offlineMode ?? false);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories((prev) =>
@@ -54,8 +58,9 @@ function NodeLibrary({ onAddStep, stations, onAddStepToStation, onClose }: NodeL
   };
 
   const filterNodes = (types: StepType[]) => {
-    if (!search) return types;
     return types.filter((type) => {
+      if (offlineMode && HIDDEN_OFFLINE_TYPES.includes(type)) return false;
+      if (!search) return true;
       const info = STEP_TYPE_INFO[type];
       return info.label.toLowerCase().includes(search.toLowerCase());
     });

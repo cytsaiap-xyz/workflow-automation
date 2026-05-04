@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import DashboardPage from './features/dashboard/DashboardPage';
 import EditorPage from './features/editor/EditorPage';
@@ -9,6 +10,7 @@ import Sidebar from './shared/components/Sidebar';
 import ToastContainer from './shared/components/ToastContainer';
 import { ConfirmProvider } from './shared/components/ConfirmDialog';
 import { InputProvider } from './shared/components/InputDialog';
+import { useConfigStore } from './shared/stores/configStore';
 
 // Layout with sidebar for main pages
 function MainLayout({ children }: { children: React.ReactNode }) {
@@ -16,6 +18,10 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  useEffect(() => {
+    useConfigStore.getState().load();
+  }, []);
+
   return (
     <ConfirmProvider>
       <InputProvider>
