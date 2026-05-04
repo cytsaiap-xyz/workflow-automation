@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWorkflowStore } from '../editor/stores/workflowStore';
 import ExecuteDialog from '../editor/components/ExecuteDialog';
+import { RunWithInputDialog } from '../editor/RunWithInputDialog';
 import type { Workflow } from '../../shared/types/workflow';
 import { workflowApi } from '../../shared/api/workflowApi';
 import {
@@ -39,6 +40,7 @@ function DashboardPage() {
   const [newWorkflowDesc, setNewWorkflowDesc] = useState('');
   const [nameTouched, setNameTouched] = useState(false);
   const [executeTarget, setExecuteTarget] = useState<Workflow | null>(null);
+  const [fileInputTarget, setFileInputTarget] = useState<Workflow | null>(null);
 
   useEffect(() => {
     fetchWorkflows();
@@ -95,14 +97,20 @@ function DashboardPage() {
     e.stopPropagation();
     const params = workflow.definition.inputParameters;
     if (params && params.length > 0) {
-      setExecuteTarget(workflow);
+      // Route to file-upload dialog if any parameter is of type 'file',
+      // otherwise use the plain JSON-body ExecuteDialog.
+      if (params.some(p => p.type === 'file')) {
+        setFileInputTarget(workflow);
+      } else {
+        setExecuteTarget(workflow);
+      }
       return;
     }
     try {
       await workflowApi.execute(workflow.id);
       toast.success(`Workflow "${workflow.name}" execution started`);
-    } catch (err: any) {
-      toast.error(`Execution failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Execution failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }, []);
 
@@ -112,8 +120,8 @@ function DashboardPage() {
     try {
       await workflowApi.execute(executeTarget.id, inputData);
       toast.success(`Workflow "${executeTarget.name}" execution started`);
-    } catch (err: any) {
-      toast.error(`Execution failed: ${err.message}`);
+    } catch (err: unknown) {
+      toast.error(`Execution failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }, [executeTarget]);
 
@@ -341,13 +349,27 @@ function DashboardPage() {
         </div>
       </main>
 
-      {/* Execute Dialog */}
+      {/* Execute Dialog (non-file inputs) */}
       {executeTarget && executeTarget.definition.inputParameters && (
         <ExecuteDialog
           parameters={executeTarget.definition.inputParameters}
           mode="execute"
           onSubmit={handleExecuteWithParams}
           onCancel={() => setExecuteTarget(null)}
+        />
+      )}
+
+      {/* Run-with-Input Dialog (file uploads) */}
+      {fileInputTarget && fileInputTarget.definition.inputParameters && (
+        <RunWithInputDialog
+          workflowId={fileInputTarget.id}
+          inputs={fileInputTarget.definition.inputParameters}
+          open={true}
+          onClose={() => setFileInputTarget(null)}
+          onComplete={() => {
+            toast.success(`Workflow "${fileInputTarget.name}" execution started`);
+            setFileInputTarget(null);
+          }}
         />
       )}
 

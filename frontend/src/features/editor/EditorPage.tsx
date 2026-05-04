@@ -14,8 +14,9 @@ import StationConfigPanel from './components/StationConfigPanel';
 import SimulationPanel from './components/SimulationPanel';
 import VersionHistoryPanel from './components/VersionHistoryPanel';
 import ExecuteDialog from './components/ExecuteDialog';
+import { RunWithInputDialog } from './RunWithInputDialog';
 import { toast } from '../../shared/stores/toastStore';
-import type { StepType } from '../../shared/types/workflow';
+import type { StepType, Execution } from '../../shared/types/workflow';
 import InputParametersEditor from './components/InputParametersEditor';
 import {
   ArrowLeft,
@@ -70,6 +71,7 @@ function EditorPage() {
   const [showSimulation, setShowSimulation] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showExecuteDialog, setShowExecuteDialog] = useState<'execute' | 'simulate' | null>(null);
+  const [showRunDialog, setShowRunDialog] = useState(false);
   const [showInputParams, setShowInputParams] = useState(false);
   
   // Track unsaved changes
@@ -261,6 +263,28 @@ function EditorPage() {
     }
   }, [showExecuteDialog, simulateWorkflow, executeWorkflow]);
 
+  const handleRun = useCallback(() => {
+    const params = currentWorkflow?.definition.inputParameters;
+    if (params && params.length > 0) {
+      if (params.some(p => p.type === 'file')) {
+        setShowRunDialog(true);
+      } else {
+        setShowExecuteDialog('execute');
+      }
+      return;
+    }
+    // No input parameters — use existing JSON-body flow
+    setShowSimulation(true);
+    executeWorkflow({}).catch(err => {
+      console.error('Execution failed:', err);
+    });
+  }, [currentWorkflow, executeWorkflow]);
+
+  const handleRunComplete = useCallback((_exec: Execution) => {
+    setShowSimulation(true);
+    toast.success('Workflow execution started');
+  }, []);
+
   const handleStepClick = useCallback((stepId: string) => {
     selectStep(stepId);
   }, [selectStep]);
@@ -434,7 +458,7 @@ function EditorPage() {
             )}
           </button>
           
-          <button 
+          <button
             className="btn btn-success"
             onClick={handleSimulate}
             disabled={isSimulating || !currentWorkflow?.definition.stations.length}
@@ -445,6 +469,15 @@ function EditorPage() {
               <Play size={18} />
             )}
             Simulate
+          </button>
+
+          <button
+            className="btn btn-primary"
+            onClick={handleRun}
+            disabled={isSimulating || !currentWorkflow?.definition.stations.length}
+          >
+            <Play size={18} />
+            Run
           </button>
         </div>
       </header>
@@ -563,13 +596,24 @@ function EditorPage() {
         )}
       </div>
 
-      {/* Execute Dialog (for workflows with input parameters) */}
+      {/* Execute Dialog (for workflows with non-file input parameters) */}
       {showExecuteDialog && currentWorkflow?.definition.inputParameters && (
         <ExecuteDialog
           parameters={currentWorkflow.definition.inputParameters}
           mode={showExecuteDialog}
           onSubmit={handleExecuteWithParams}
           onCancel={() => setShowExecuteDialog(null)}
+        />
+      )}
+
+      {/* Run-with-Input Dialog (for workflows with file upload parameters) */}
+      {currentWorkflow?.definition.inputParameters && (
+        <RunWithInputDialog
+          workflowId={currentWorkflow.id}
+          inputs={currentWorkflow.definition.inputParameters}
+          open={showRunDialog}
+          onClose={() => setShowRunDialog(false)}
+          onComplete={handleRunComplete}
         />
       )}
     </div>
