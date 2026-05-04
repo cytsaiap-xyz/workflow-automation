@@ -3,6 +3,7 @@ import DashboardPage from './features/dashboard/DashboardPage';
 import EditorPage from './features/editor/EditorPage';
 import MonitoringPage from './features/monitoring/MonitoringPage';
 import ExecutionsPage from './features/executions/ExecutionsPage';
+import { AIProvidersPage } from './features/settings/AIProvidersPage';
 import Sidebar from './shared/components/Sidebar';
 import ToastContainer from './shared/components/ToastContainer';
 import { ConfirmProvider } from './shared/components/ConfirmDialog';
@@ -23,6 +24,7 @@ function App() {
             <Route path="/dashboard" element={<MainLayout><DashboardPage /></MainLayout>} />
             <Route path="/monitoring" element={<MainLayout><MonitoringPage /></MainLayout>} />
             <Route path="/executions" element={<MainLayout><ExecutionsPage /></MainLayout>} />
+            <Route path="/settings/ai-providers" element={<MainLayout><AIProvidersPage /></MainLayout>} />
             {/* Editor pages without sidebar for full-screen editing */}
             <Route path="/editor/:id" element={<EditorPage />} />
             <Route path="/editor" element={<EditorPage />} />
