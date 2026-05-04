@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import path from 'path';
@@ -15,6 +15,7 @@ describe('GET /api/files', () => {
     allowedFile = path.join(tmp, 'exec-1', 'quiz.json');
     fs.mkdirSync(path.dirname(allowedFile), { recursive: true });
     fs.writeFileSync(allowedFile, JSON.stringify({ ok: true }));
+    vi.resetModules();
     const router = (await import('../routes/files')).default;
     app = express();
     app.use('/api/files', router);

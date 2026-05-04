@@ -12,8 +12,7 @@ router.get('/', (req: Request, res: Response) => {
   }
   const resolved = path.resolve(requested);
   // Path-traversal guard: only allow files inside ENV_UPLOADS_ROOT.
-  const root = path.resolve(ENV_UPLOADS_ROOT);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+  if (resolved !== ENV_UPLOADS_ROOT && !resolved.startsWith(ENV_UPLOADS_ROOT + path.sep)) {
     return res.status(403).json({ success: false, error: 'forbidden' });
   }
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
