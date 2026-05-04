@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Settings, Star, Trash2, Plus, RefreshCw, ChevronUp } from 'lucide-react';
 import { aiProvidersApi } from '../../shared/api/aiProvidersApi';
 import type { AiProvider } from '../../shared/api/aiProvidersApi';
