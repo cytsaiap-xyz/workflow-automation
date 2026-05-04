@@ -85,7 +85,9 @@ export type StepType =
   | 'ai-prompt'
   | 'ai-structured-output'
   | 'ai-agent'
-  | 'ai-router';
+  | 'ai-router'
+  | 'load-document'
+  | 'quiz-output-writer';
 
 export interface StepConfig {
   code?: string;
@@ -255,4 +257,6 @@ export const STEP_TYPE_INFO: Record<StepType, { label: string; icon: string; col
   'ai-structured-output': { label: 'AI Structured Output', icon: '📋', color: '#6366f1' },
   'ai-agent': { label: 'AI Agent', icon: '🧠', color: '#a855f7' },
   'ai-router': { label: 'AI Router', icon: '🔀', color: '#7c3aed' },
+  'load-document': { label: 'Load Document', icon: '📄', color: '#0ea5e9' },
+  'quiz-output-writer': { label: 'Quiz Output Writer', icon: '📝', color: '#10b981' },
 };

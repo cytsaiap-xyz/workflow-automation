@@ -15,6 +15,7 @@ import {
 import { executionApi } from '../../shared/api/workflowApi';
 import { useConfirm } from '../../shared/components/ConfirmDialog';
 import type { Execution, ExecutionLog } from '../../shared/types/workflow';
+import { QuizResultView } from './QuizResultView';
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, { bg: string; color: string; icon: React.ReactNode }> = {
@@ -307,6 +308,23 @@ function ExecutionRow({
                 ))}
               </div>
             )}
+
+            {/* Quiz Result View — rendered when a quiz-output-writer step produced output */}
+            {(() => {
+              const quizStep = execution.result?.stations
+                ?.flatMap((s) => s.steps)
+                .find((s) => s.stepType === 'quiz-output-writer' && s.output?.json);
+              if (!quizStep) return null;
+              return (
+                <div style={{ marginTop: '12px' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Quiz Output</h4>
+                  <QuizResultView
+                    json={quizStep.output!.json}
+                    filePath={quizStep.output!.filePath as string | undefined}
+                  />
+                </div>
+              );
+            })()}
 
             {/* Logs */}
             {logs && logs.length > 0 && (
