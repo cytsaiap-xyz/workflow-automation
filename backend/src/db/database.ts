@@ -192,6 +192,11 @@ const SCHEMA_SQL = `
     FOREIGN KEY (conversation_id) REFERENCES assistant_conversations(id) ON DELETE CASCADE,
     FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
 `;
 
 export async function initDatabase(): Promise<void> {

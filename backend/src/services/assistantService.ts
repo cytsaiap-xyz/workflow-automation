@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { AssistantConversationModel } from '../models/assistantConversationModel';
 import { AiProviderModel } from '../models/aiProviderModel';
+import { AppSettingsModel } from '../models/appSettingsModel';
 import { estimateTokens } from './tokenEstimator';
 import { ASSISTANT_TOOL_SCHEMAS, dispatchTool } from './assistantTools';
 import { buildAssistantSystemPrompt } from './assistantPromptBuilder';
@@ -11,7 +12,7 @@ const COMPACT_THRESHOLD = 0.75;
 const KEEP_RECENT = 8;
 
 export function getAssistantProvider() {
-  const id = process.env.ASSISTANT_PROVIDER_ID;
+  const id = AppSettingsModel.get('assistant_provider_id') || process.env.ASSISTANT_PROVIDER_ID;
   if (id) {
     const p = AiProviderModel.getById(id);
     if (p) return p;
