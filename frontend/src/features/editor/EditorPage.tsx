@@ -275,8 +275,9 @@ function EditorPage() {
     }
     // No input parameters — use existing JSON-body flow
     setShowSimulation(true);
-    executeWorkflow({}).catch(err => {
-      console.error('Execution failed:', err);
+    executeWorkflow({}).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : 'Execution failed';
+      toast.error(message);
     });
   }, [currentWorkflow, executeWorkflow]);
 

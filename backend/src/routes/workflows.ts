@@ -163,7 +163,7 @@ async function runExecute(req: Request, res: Response, fromMultipart: boolean): 
       triggeredBy = body.triggeredBy ?? 'manual';
     }
 
-    const executionId = (req as any).executionId as string;
+    const executionId = req.executionId as string;
 
     // INSERT the row only after inputs are successfully gathered.
     ExecutionModel.create(workflow.id, workflow.name, triggeredBy, executionId);
@@ -178,7 +178,7 @@ async function runExecute(req: Request, res: Response, fromMultipart: boolean): 
 
 router.post('/:id/execute', async (req: Request, res: Response) => {
   // Pre-allocate the ID so multer can use it for the upload directory; do NOT INSERT yet.
-  (req as any).executionId = uuidv4();
+  req.executionId = uuidv4();
 
   const ct = (req.headers['content-type'] || '').toString();
 

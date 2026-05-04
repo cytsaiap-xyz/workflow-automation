@@ -13,8 +13,8 @@ export const ENV_UPLOADS_ROOT = UPLOADS_ROOT;
 
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    const executionId = (req as any).executionId || `pending-${uuidv4()}`;
-    (req as any).executionId = executionId;
+    const executionId = req.executionId || `pending-${uuidv4()}`;
+    req.executionId = executionId;
     const dir = path.join(UPLOADS_ROOT, executionId);
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);

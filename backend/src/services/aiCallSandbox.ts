@@ -13,7 +13,7 @@ export interface AiCallParams {
   maxTokens?: number;
 }
 
-export async function aiCall(params: AiCallParams): Promise<any> {
+export async function aiCall(params: AiCallParams): Promise<Record<string, unknown>> {
   let providerId = params.providerId;
   if (!providerId && params.providerName) {
     const all = AiProviderModel.getAll();
@@ -21,7 +21,7 @@ export async function aiCall(params: AiCallParams): Promise<any> {
   }
   const sysT = params.systemTemplate ? PromptTemplateModel.getByName(params.systemTemplate) : undefined;
   const usrT = params.userTemplate ? PromptTemplateModel.getByName(params.userTemplate) : undefined;
-  const config: any = {
+  const config: import('../types/workflow').StepConfig = {
     aiProviderId: providerId,
     aiPromptTemplateSystemId: sysT?.id,
     aiPromptTemplateUserId: usrT?.id,
