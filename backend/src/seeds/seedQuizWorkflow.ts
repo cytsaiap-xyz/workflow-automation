@@ -3,7 +3,7 @@ import { WorkflowModel } from '../models/workflow';
 const QUIZ_WORKFLOW_ID = 'builtin-quiz-generator';
 
 const ORCHESTRATOR_CODE = `
-const chunks = inputData.chunks || variables.steps['load']?.output?.chunks || [];
+const chunks = inputData.chunks || variables.load?.output?.chunks || [];
 const focusArea = variables.input.focus_area || 'concept and logic, not usage or default values';
 const questionsPerChunk = Number(variables.input.questions_per_chunk || 3);
 const all = [];
@@ -123,7 +123,7 @@ export function seedQuizWorkflow(): void {
               position: { x: 0, y: 0 },
               config: { code: ORCHESTRATOR_CODE },
               inputVars: [
-                { name: 'chunks', source: '${steps.load.output.chunks}' },
+                { name: 'chunks', source: '${load.output.chunks}' },
               ],
               timeout: 600000,
             },
@@ -141,7 +141,7 @@ export function seedQuizWorkflow(): void {
               position: { x: 0, y: 0 },
               config: { quizOutputFilename: 'quiz.json' },
               inputVars: [
-                { name: 'questions', source: '${variables.allQuestions}' },
+                { name: 'questions', source: '${allQuestions}' },
                 { name: 'sourceFile', source: '${input.file}' },
                 { name: 'focusArea', source: '${input.focus_area}' },
               ],
