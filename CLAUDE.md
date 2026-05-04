@@ -134,6 +134,12 @@ Workflow
 | `action-email` | Send email via SMTP (nodemailer) |
 | `action-slack` | Slack action |
 | `connector-db` | Run SQL query on PostgreSQL or MySQL |
+| `ai-prompt` | Call an AI provider with a prompt template; return raw text |
+| `ai-structured-output` | Call an AI provider and parse response against a JSON schema |
+| `ai-agent` | Agentic loop: AI drives tool calls until done or max iterations |
+| `ai-router` | AI classifies input and routes to one of several named branches |
+| `load-document` | Load PDF/PPTX/TXT document, return per-page chunks (text + image) |
+| `quiz-output-writer` | Write a quiz JSON file under `data/uploads/<execution-id>/` |
 
 ### Variable Reference Syntax
 Steps reference outputs using `${}` interpolation:
@@ -211,6 +217,11 @@ CREATE TABLE execution_logs (
 | PUT | `/api/schedules/:id/resume` | Resume schedule |
 | ANY | `/api/webhooks/:id` | Dynamic webhook handler (returns 202) |
 | GET | `/api/metrics` | Dashboard metrics |
+| GET/POST/PUT/DELETE | `/api/ai-providers` | AI Provider CRUD |
+| POST | `/api/ai-providers/:id/promote` | Set provider as default |
+| GET/POST/PUT/DELETE | `/api/prompt-templates` | Prompt template CRUD |
+| GET | `/api/files?path=...` | Download a file from the uploads dir (path-traversal guarded) |
+| GET | `/api/config` | Returns runtime config (offlineMode flag) |
 
 ---
 
@@ -224,6 +235,14 @@ CREATE TABLE execution_logs (
 | `PYTHON_CMD` | `python` | Python executable name |
 | `NODE_ENV` | — | `development` or `production` |
 | `SMTP_HOST/PORT/SECURE/USER/PASS/FROM` | — | Email configuration |
+| `VLLM_BASE_URL` | — | OpenAI-compatible vLLM endpoint (seeded as default AI provider) |
+| `VLLM_DEFAULT_MODEL` | — | Model name for default provider |
+| `VLLM_API_KEY` | (optional) | API key, if your vLLM requires one |
+| `VLLM_SUPPORTS_VISION` | `false` | `true` if the default model is multi-modal |
+| `UPLOADS_DIR` | `data/uploads` | Where uploaded files and rasterized images are stored |
+| `HTTP_ALLOWLIST` | (loopback only) | Comma-separated hosts/CIDRs allowed for the http-request step |
+| `OFFLINE_MODE` | `false` | When `true`, slack/email node types are hidden from the editor palette |
+| `IMAGE_LONG_SIDE_PX` | `1568` | Maximum long-side pixel size for rasterized PDF pages |
 
 ### Frontend
 | Variable | Default | Purpose |
