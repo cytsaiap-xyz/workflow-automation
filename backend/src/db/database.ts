@@ -162,6 +162,36 @@ const SCHEMA_SQL = `
   );
 
   CREATE INDEX IF NOT EXISTS idx_prompt_templates_tags ON prompt_templates(tags);
+
+  CREATE TABLE IF NOT EXISTS assistant_conversations (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    surface TEXT NOT NULL CHECK(surface IN ('panel','node-popover')),
+    node_id TEXT,
+    messages TEXT NOT NULL DEFAULT '[]',
+    summary TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_conv_workflow ON assistant_conversations(workflow_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_conv_node
+    ON assistant_conversations(workflow_id, node_id)
+    WHERE surface = 'node-popover';
+
+  CREATE TABLE IF NOT EXISTS pending_changes (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL,
+    diff TEXT NOT NULL,
+    rationale TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','applied','rejected')),
+    created_at TEXT DEFAULT (datetime('now')),
+    resolved_at TEXT,
+    FOREIGN KEY (conversation_id) REFERENCES assistant_conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+  );
 `;
 
 export async function initDatabase(): Promise<void> {
