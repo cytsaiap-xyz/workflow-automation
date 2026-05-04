@@ -10,6 +10,7 @@ import aiProvidersRouter from './routes/aiProviders';
 import promptTemplatesRouter from './routes/promptTemplates';
 import filesRouter from './routes/files';
 import configRouter from './routes/config';
+import assistantRouter from './routes/assistant';
 import { requestLogger, createLogger } from './utils/logger';
 
 const log = createLogger('app');
@@ -36,6 +37,7 @@ app.use('/api/ai-providers', aiProvidersRouter);
 app.use('/api/prompt-templates', promptTemplatesRouter);
 app.use('/api/files', filesRouter);
 app.use('/api/config', configRouter);
+app.use('/api/assistant', assistantRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
