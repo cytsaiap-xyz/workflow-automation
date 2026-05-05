@@ -5,6 +5,9 @@ export interface Workflow {
   name: string;
   description?: string;
   status: 'draft' | 'active' | 'paused';
+  // definition may be v1 (WorkflowDefinition) or v2 (WorkflowDefinitionV2).
+  // Use isV2(workflow.definition) to narrow. Typed as WorkflowDefinition for
+  // backward compatibility; v2 workflows carry schemaVersion at runtime.
   definition: WorkflowDefinition;
   createdAt: string;
   updatedAt: string;
@@ -14,6 +17,62 @@ export interface WorkflowDefinition {
   stations: Station[];
   variables?: Record<string, any>;
   inputParameters?: InputParameter[];
+}
+
+// ---- DAG / v2 types ----
+
+export interface DagNode {
+  id: string;
+  name: string;
+  type: StepType;
+  position: { x: number; y: number };
+  config: StepConfig;
+  inputVars?: VariableMapping[];
+  outputVars?: VariableDefinition[];
+  timeout?: number;
+  retryPolicy?: {
+    maxAttempts: number;
+    initialInterval: number;
+    backoffCoefficient?: number;
+    maxInterval?: number;
+  };
+  fanOut?: {
+    enabled: boolean;
+    inputArrayPath: string;
+  };
+  errorPolicy?: {
+    onError: 'stop' | 'continue' | 'retry';
+    retryCount?: number;
+    errorBranch?: string;
+  };
+}
+
+export interface DagEdge {
+  id: string;
+  source: string;
+  sourcePort?: string;
+  target: string;
+  targetPort?: string;
+  when?: string;
+  mergeMode?: 'all' | 'any';
+}
+
+export interface WorkflowDefinitionV2 {
+  schemaVersion: 2;
+  inputParameters?: InputParameter[];
+  variables?: Record<string, any>;
+  nodes: DagNode[];
+  edges: DagEdge[];
+}
+
+// Runtime guard for v2 DAG workflow definitions.
+// We accept WorkflowDefinition (the typed baseline) and assert WorkflowDefinitionV2
+// via an intermediate unknown cast because the two types are structurally disjoint.
+export function isV2(
+  def: WorkflowDefinition,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): def is WorkflowDefinition & WorkflowDefinitionV2 {
+  return (def as unknown as WorkflowDefinitionV2).schemaVersion === 2;
 }
 
 export interface InputParameter {
