@@ -34,7 +34,14 @@ export type WorkflowDiff =
   | { kind: 'add_station'; station: any; position?: number }
   | { kind: 'remove_station'; stationId: string }
   | { kind: 'update_station'; stationId: string; patch: Record<string, any> }
-  | { kind: 'replace_workflow'; stations: any[] };
+  | { kind: 'replace_workflow'; stations: any[] }
+  | { kind: 'add_node'; node: any }
+  | { kind: 'remove_node'; nodeId: string }
+  | { kind: 'update_node'; nodeId: string; patch: Record<string, any> }
+  | { kind: 'add_edge'; edge: any }
+  | { kind: 'remove_edge'; edgeId: string }
+  | { kind: 'update_edge'; edgeId: string; patch: Record<string, any> }
+  | { kind: 'replace_workflow_v2'; nodes: any[]; edges: any[] };
 
 export interface PendingChange {
   id: string;

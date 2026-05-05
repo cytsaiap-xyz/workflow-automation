@@ -57,12 +57,12 @@ describe('Assistant API', () => {
     const { PendingChangeModel } = await import('../models/pendingChangeModel');
     const pc = PendingChangeModel.create({
       conversationId: convId, workflowId,
-      diff: [{ kind: 'add_station', station: { id: 'new', name: 'n', steps: [], position: { x: 0, y: 1 } } }] as any,
+      diff: [{ kind: 'add_node', node: { id: 'new', name: 'n', type: 'script-js', config: {}, position: { x: 0, y: 1 } } }] as any,
       rationale: 'add',
     });
     const apply = await request(app).post(`/api/assistant/changes/${pc.id}/apply`);
     expect(apply.status).toBe(200);
     const { WorkflowModel } = await import('../models/workflow');
-    expect(WorkflowModel.getById(workflowId)!.definition.stations.length).toBe(1);
+    expect((WorkflowModel.getById(workflowId)!.definition as any).nodes.length).toBe(1);
   });
 });
