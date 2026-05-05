@@ -91,6 +91,7 @@ const SCHEMA_SQL = `
     description TEXT,
     status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'active', 'paused')),
     definition TEXT NOT NULL,
+    schema_version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -222,6 +223,11 @@ export async function initDatabase(): Promise<void> {
   _db = new SqlJsAdapter(sqlDb, DB_PATH);
   _db.pragma('foreign_keys = ON');
   _db.exec(SCHEMA_SQL);
+  try {
+    _db!.exec("ALTER TABLE workflows ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 1");
+  } catch (e) {
+    // ignore — column already exists on fresh DBs created with the new schema
+  }
 }
 
 /**
