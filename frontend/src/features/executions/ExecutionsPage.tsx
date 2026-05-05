@@ -11,11 +11,15 @@ import {
   ChevronDown,
   ChevronRight,
   RefreshCw,
+  Bot,
 } from 'lucide-react';
 import { executionApi } from '../../shared/api/workflowApi';
 import { useConfirm } from '../../shared/components/ConfirmDialog';
 import type { Execution, ExecutionLog } from '../../shared/types/workflow';
 import { QuizResultView } from './QuizResultView';
+import { AssistantChatPanel } from '../assistant/AssistantChatPanel';
+import { useAssistantStore } from '@/shared/stores/assistantStore';
+import { assistantApi } from '@/shared/api/assistantApi';
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, { bg: string; color: string; icon: React.ReactNode }> = {
@@ -66,6 +70,28 @@ export default function ExecutionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [logs, setLogs] = useState<Record<string, ExecutionLog[]>>({});
+  const [assistantWorkflowId, setAssistantWorkflowId] = useState<string | null>(null);
+
+  const handleDebugWithAssistant = useCallback(async (execution: Execution) => {
+    const { setPanelOpen, setConversation, appendUser, appendStreaming, appendToolCall, attachToolResult, addPendingChange, setStreaming } = useAssistantStore.getState();
+    setAssistantWorkflowId(execution.workflowId);
+    setPanelOpen(true);
+    const c = await assistantApi.conversation.findOrCreate({
+      workflowId: execution.workflowId,
+      surface: 'panel',
+    });
+    setConversation(c.id, c.messages);
+    const debugPrompt = `Execution ${execution.id} failed. Please fetch its logs and explain what went wrong, then propose a fix.`;
+    appendUser(debugPrompt);
+    setStreaming(true);
+    assistantApi.sendMessage(c.id, debugPrompt, (e: Record<string, unknown>) => {
+      if (e.type === 'token') appendStreaming(e.value as string);
+      else if (e.type === 'tool_call') appendToolCall(e.name as string, e.args);
+      else if (e.type === 'tool_result') attachToolResult(e.name as string, e.summary as string);
+      else if (e.type === 'pending_change') addPendingChange(e.change_id as string);
+      else if (e.type === 'done' || e.type === 'error') setStreaming(false);
+    });
+  }, []);
 
   const fetchExecutions = useCallback(async () => {
     try {
@@ -150,6 +176,10 @@ export default function ExecutionsPage() {
         </div>
       </header>
 
+      {assistantWorkflowId && (
+        <AssistantChatPanel workflowId={assistantWorkflowId} />
+      )}
+
       <main className="main-content">
         {error && (
           <div className="card" style={{
@@ -195,6 +225,7 @@ export default function ExecutionsPage() {
                     onToggle={() => toggleExpand(exec.id)}
                     onDelete={() => handleDelete(exec.id)}
                     onCancel={() => handleCancel(exec.id)}
+                    onDebugWithAssistant={() => handleDebugWithAssistant(exec)}
                   />
                 ))}
               </tbody>
@@ -217,7 +248,7 @@ const tdStyle: React.CSSProperties = {
 };
 
 function ExecutionRow({
-  execution, isExpanded, logs, onToggle, onDelete, onCancel,
+  execution, isExpanded, logs, onToggle, onDelete, onCancel, onDebugWithAssistant,
 }: {
   execution: Execution;
   isExpanded: boolean;
@@ -225,6 +256,7 @@ function ExecutionRow({
   onToggle: () => void;
   onDelete: () => void;
   onCancel: () => void;
+  onDebugWithAssistant: () => void;
 }) {
   return (
     <>
@@ -356,6 +388,20 @@ function ExecutionRow({
             )}
             {logs && logs.length === 0 && (
               <p className="text-muted text-sm" style={{ marginTop: '8px' }}>No logs available.</p>
+            )}
+
+            {/* Debug deep-link button for failed executions */}
+            {execution.status === 'failed' && (
+              <div style={{ marginTop: '14px' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={(e) => { e.stopPropagation(); onDebugWithAssistant(); }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Bot size={15} />
+                  Ask the assistant about this failure
+                </button>
+              </div>
             )}
           </td>
         </tr>
