@@ -81,10 +81,11 @@ describe('Quiz workflow E2E', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
 
-    // The execution result should have 3 stations; the writer is in station[2].
+    // The v2 DAG engine produces one synthetic station containing all node step results.
     const stations = res.body.data.result.stations;
-    expect(stations.length).toBe(3);
-    const writerOutput = stations[2].steps[0].output;
+    expect(stations.length).toBe(1);
+    // The three nodes (load, orchestrator, writer) appear as steps[0..2] in order.
+    const writerOutput = stations[0].steps[2].output;
     expect(writerOutput.json.questions.length).toBeGreaterThan(0);
     expect(writerOutput.json.questions[0].answer).toBe('B');
     expect(fs.existsSync(writerOutput.filePath)).toBe(true);

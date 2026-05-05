@@ -9,45 +9,13 @@ import {
   StepResult,
   ExecutionLog
 } from '../types/workflow';
-import { isV2 } from '../types/dag';
+import { isV2, WorkflowDefinitionV2 } from '../types/dag';
 import { ExecutionModel, LogModel } from '../models/execution';
 import { ScriptRunner, ScriptResult } from './scriptRunner';
 import { executionManager } from './executionManager';
 import { executionEventBus, ExecutionEvent } from './executionEventBus';
 import { StepExecutor } from './stepExecutor';
-
-/**
- * Normalise a workflow definition (v1 or auto-migrated v2) into a stations array
- * so that the v1 execution engine can drive it without further changes.
- *
- * For a v2 definition each node becomes a synthetic single-step station.
- * This is a compatibility shim; a dedicated DAG executor (S4+) will replace it.
- */
-function getStationsFromWorkflow(workflow: Workflow): Station[] {
-  const def = workflow.definition as any;
-  if (isV2(def)) {
-    return (def.nodes as any[]).map((node: any) => ({
-      // Prefix the synthetic station id so it does not collide with the step id.
-      // Step-level variable references (e.g. ${load.output.chunks}) are stored
-      // under the step id; the station id must differ to avoid clobbering them.
-      id: `_s_${node.id}`,
-      name: node.name,
-      position: node.position || { x: 0, y: 0 },
-      steps: [{
-        id: node.id,
-        name: node.name,
-        type: node.type,
-        config: node.config || {},
-        position: node.position || { x: 0, y: 0 },
-        inputVars: node.inputVars,
-        outputVars: node.outputVars,
-        timeout: node.timeout,
-        retryPolicy: node.retryPolicy,
-      }] as Step[],
-    })) as Station[];
-  }
-  return def.stations as Station[];
-}
+import { runDag } from './dagScheduler';
 
 export interface ExecutionContext {
   executionId: string;
@@ -107,6 +75,11 @@ export class ExecutionEngine {
       }
     }
 
+    // Dispatch v2 workflows to the DAG scheduler.
+    if (isV2(workflow.definition)) {
+      return this.runV2(executionId, workflow, triggeredBy, inputData, simulate);
+    }
+
     // Register with execution manager for cancellation support
     const signal = executionManager.register(execution.id);
 
@@ -132,8 +105,8 @@ export class ExecutionEngine {
     let completedSteps = 0;
     let failed = false;
 
-    // Execute stations sequentially
-    const stations = getStationsFromWorkflow(workflow);
+    // Execute stations sequentially (v1 path only; v2 is dispatched to runV2 above)
+    const stations = (workflow.definition as any).stations as Station[];
     let cancelled = false;
     for (const station of stations) {
       if (failed) break;
@@ -225,6 +198,105 @@ export class ExecutionEngine {
     }
 
     return updatedExecution!;
+  }
+
+  /**
+   * Execute a v2 (DAG-schema) workflow by delegating to the dagScheduler.
+   * Produces a v1-compatible result shape (one synthetic station) so the run
+   * panel keeps working without changes.
+   */
+  private static async runV2(
+    executionId: string,
+    workflow: Workflow,
+    triggeredBy: Execution['triggeredBy'],
+    inputData: Record<string, any>,
+    simulate: boolean,
+  ): Promise<Execution> {
+    const def = workflow.definition as unknown as WorkflowDefinitionV2;
+    const startTime = new Date().toISOString();
+
+    // Shared mutable context — nodes populate this as they complete.
+    const variables: Record<string, any> = {
+      ...(def.variables || {}),
+      ...inputData,
+      input: { ...inputData },
+      executionId,
+      steps: {} as Record<string, { output: any; success: boolean }>,
+    };
+
+    // Collect per-node step results in execution order.
+    const stepResults: StepResult[] = [];
+
+    const dagResult = await runDag(def, {
+      maxConcurrency: Number(process.env.MAX_CONCURRENT_NODES || 4),
+      initialContext: { variables },
+      executeNode: async (node, _mergedInput) => {
+        const stepStart = new Date().toISOString();
+        const ctx = { variables, steps: variables.steps as Record<string, any>, simulate };
+        const resolved = StepExecutor.resolveInputVariables(node as unknown as Step, variables);
+        const r = await StepExecutor.executeStepByType(node as unknown as Step, ctx, resolved);
+        const stepEnd = new Date().toISOString();
+
+        // Record result so later nodes can reference ${nodeId.output.x}.
+        variables.steps[node.id] = { output: r.output, success: r.success };
+        variables[node.id] = { output: r.output };
+
+        const sr: StepResult = {
+          stepId: node.id,
+          stepName: node.name,
+          stepType: node.type,
+          status: r.success ? 'completed' : 'failed',
+          startTime: stepStart,
+          endTime: stepEnd,
+          input: resolved,
+          output: r.output,
+          error: r.error ? { message: r.error } : undefined,
+        };
+        stepResults.push(sr);
+
+        if (!r.success) throw new Error(r.error || 'step failed');
+        return r.output;
+      },
+      onNodeStatus: (_nodeId, _status, _info) => {
+        // Future: emit to executionEventBus if needed.
+      },
+    });
+
+    const endTime = new Date().toISOString();
+    const finalStatus = dagResult.status === 'completed' ? 'completed' : 'failed';
+    const completedCount = stepResults.filter(s => s.status === 'completed').length;
+    const successRate = stepResults.length > 0 ? (completedCount / stepResults.length) * 100 : 0;
+
+    const finalResult: ExecutionResult = {
+      stations: [{
+        stationId: 'dag',
+        stationName: 'graph',
+        status: finalStatus,
+        startTime,
+        endTime,
+        steps: stepResults,
+        output: {
+          allStepsCompleted: finalStatus === 'completed',
+          stepCount: stepResults.length,
+          completedCount,
+          stepResults: stepResults.map(s => ({
+            stepId: s.stepId,
+            stepName: s.stepName,
+            status: s.status,
+            output: s.output,
+          })),
+        },
+      }],
+    };
+
+    const updated = ExecutionModel.update(executionId, {
+      status: finalStatus,
+      endTime,
+      successRate,
+      result: finalResult,
+    });
+
+    return updated!;
   }
 
   /**
