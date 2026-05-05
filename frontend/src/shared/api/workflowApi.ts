@@ -41,8 +41,23 @@ export const workflowApi = {
     status: 'draft' | 'active' | 'paused';
     definition: WorkflowDefinition;
   }>): Promise<Workflow> => {
-    const response = await api.put<ApiResponse<Workflow>>(`/workflows/${id}`, data);
-    if (!response.data.success) throw new Error(response.data.error);
+    // Use validateStatus so axios does not throw on 4xx — we inspect the body ourselves
+    // to propagate structured validator errors (errors/warnings arrays) on HTTP 400.
+    const response = await api.put<ApiResponse<Workflow>>(
+      `/workflows/${id}`,
+      data,
+      { validateStatus: (status) => status < 500 },
+    );
+    if (!response.data.success) {
+      const err: Error & { validationData?: { errors?: string[]; warnings?: string[] } } =
+        new Error(response.data.error || 'Save failed');
+      // Attach the structured validator payload (errors/warnings) when present (HTTP 400 invalid DAG)
+      const raw = response.data as unknown as { data?: { errors?: string[]; warnings?: string[] } };
+      if (raw.data && (raw.data.errors || raw.data.warnings)) {
+        err.validationData = raw.data;
+      }
+      throw err;
+    }
     return response.data.data!;
   },
 

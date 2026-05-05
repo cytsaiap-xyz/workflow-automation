@@ -57,10 +57,20 @@ function ToastItem({ toast }: { toast: Toast }) {
         animation: 'slideIn 0.3s ease-out',
       }}
     >
-      <Icon size={20} style={{ color: colors.icon, flexShrink: 0 }} />
-      <span style={{ flex: 1, fontSize: '14px', lineHeight: '1.4' }}>
-        {toast.message}
-      </span>
+      <Icon size={20} style={{ color: colors.icon, flexShrink: 0, marginTop: toast.details?.length ? '2px' : 0, alignSelf: toast.details?.length ? 'flex-start' : 'center' }} />
+      <div style={{ flex: 1, fontSize: '14px', lineHeight: '1.4' }}>
+        <span>{toast.message}</span>
+        {toast.details && toast.details.length > 0 && (
+          <ul style={{ margin: '6px 0 0 0', padding: 0, listStyle: 'none' }}>
+            {toast.details.map((detail, i) => (
+              <li key={i} style={{ display: 'flex', gap: '6px', marginTop: '4px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                <span style={{ flexShrink: 0 }}>•</span>
+                <span>{detail}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <button
         onClick={() => removeToast(toast.id)}
         style={{

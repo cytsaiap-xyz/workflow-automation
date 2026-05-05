@@ -267,8 +267,20 @@ function EditorPage() {
         setHasUnsavedChanges(false);
       }
       toast.success('Workflow saved');
-    } catch {
-      toast.error('Failed to save workflow');
+    } catch (err: unknown) {
+      const e = err as Error & { validationData?: { errors?: string[]; warnings?: string[] } };
+      const validationData = e.validationData;
+      if (validationData?.errors && validationData.errors.length > 0) {
+        // Build a combined detail list: errors first, then warnings
+        const details: string[] = [...validationData.errors];
+        if (validationData.warnings && validationData.warnings.length > 0) {
+          details.push('Warnings:');
+          details.push(...validationData.warnings);
+        }
+        toast.errorWithDetails('Cannot save: invalid DAG', details, 0);
+      } else {
+        toast.error(e.message || 'Failed to save workflow');
+      }
     }
   }, [saveWorkflow, currentWorkflow]);
 

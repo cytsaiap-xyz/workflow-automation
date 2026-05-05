@@ -160,8 +160,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         definition: currentWorkflow.definition,
       });
       set({ isLoading: false });
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Save failed';
+      set({ error: msg, isLoading: false });
+      // Re-throw so callers (e.g. EditorPage.handleSave) can inspect the error,
+      // including structured validationData from the DAG validator.
+      throw error;
     }
   },
 
