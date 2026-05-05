@@ -50,7 +50,7 @@ export const ASSISTANT_TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'list_node_types',
-      description: 'List all available step types and their config descriptions.',
+      description: 'List all available step types and their config descriptions. Returned items include the step `type`, `description`, and (for v2 workflows) hints about `fanOut`, `errorPolicy`, and edge-level `when`/`targetPort`/`mergeMode` properties available on the surrounding DAG.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -119,7 +119,7 @@ export const ASSISTANT_TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'propose_workflow_change',
-      description: 'Propose a workflow diff. Returns a change_id; the user must Apply it via UI.',
+      description: 'Propose a workflow diff. For v1 station-style workflows, use kinds: add_station, remove_station, update_station, add_step, remove_step, update_step, replace_workflow. For v2 DAG workflows, use kinds: add_node, remove_node, update_node, add_edge, remove_edge, update_edge, replace_workflow_v2. Returns a change_id; the user must Apply it via UI.',
       parameters: {
         type: 'object', required: ['workflow_id', 'diff'],
         properties: {
@@ -160,10 +160,19 @@ export async function dispatchTool(
       return w;
     }
     case 'list_node_types': {
-      return STEP_TYPES.map(t => ({
-        type: t,
-        description: NODE_DOCS[t] ?? `(no detailed documentation; type: ${t})`,
-      }));
+      return {
+        nodes: STEP_TYPES.map(t => ({
+          type: t,
+          description: NODE_DOCS[t] ?? `(no detailed documentation; type: ${t})`,
+        })),
+        dag_concepts: {
+          fanOut: 'Optional per-node config that runs the node once per item in an input array.',
+          errorPolicy: "Optional per-node config: { onError: 'stop' | 'continue' | 'retry', retryCount?, errorBranch? }.",
+          edge_when: 'Optional per-edge ${...} expression; the downstream node only fires when truthy.',
+          edge_targetPort: "Optional per-edge label that names the receiving node's input slot.",
+          edge_mergeMode: "'all' (wait for all incoming) or 'any' (race); per-edge.",
+        },
+      };
     }
     case 'get_node_docs': {
       const t = args.type as string;
