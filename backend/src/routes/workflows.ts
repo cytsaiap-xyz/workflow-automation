@@ -12,23 +12,30 @@ import {
   UpdateWorkflowRequest,
   ExecuteWorkflowRequest,
   ApiResponse,
-  Workflow
+  Workflow,
+  isV2,
 } from '../types/workflow';
 
 const router = Router();
+
+// Helper to iterate all steps in a workflow regardless of v1/v2 schema
+function allSteps(workflow: Workflow): Array<{ type: string; config: Record<string, any> }> {
+  const def = workflow.definition as any;
+  if (isV2(def)) {
+    return (def.nodes as any[]) as Array<{ type: string; config: Record<string, any> }>;
+  }
+  return (def.stations as any[]).flatMap((s: any) => s.steps);
+}
 
 // Helper to handle scheduling logic
 const syncSchedule = async (workflow: Workflow) => {
   // Find cron trigger
   let cronExpression: string | undefined;
-  for (const station of workflow.definition.stations) {
-    for (const step of station.steps) {
-      if (step.type === 'trigger-cron' && step.config.cronExpression) {
-        cronExpression = step.config.cronExpression;
-        break;
-      }
+  for (const step of allSteps(workflow)) {
+    if (step.type === 'trigger-cron' && step.config?.cronExpression) {
+      cronExpression = step.config.cronExpression;
+      break;
     }
-    if (cronExpression) break;
   }
 
   if (workflow.status === 'active' && cronExpression) {

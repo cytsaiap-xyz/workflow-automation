@@ -4,6 +4,7 @@ import { PromptTemplateModel } from '../models/promptTemplateModel';
 import { PendingChangeModel } from '../models/pendingChangeModel';
 import { applyDiff } from './diffApplier';
 import { WorkflowDiff } from '../types/assistant';
+import { isV2 } from '../types/dag';
 
 export interface ToolContext {
   conversationId: string;
@@ -198,7 +199,10 @@ export async function dispatchTool(
       const wf = WorkflowModel.getById(args.workflow_id as string);
       if (!wf) throw new Error('workflow not found');
       // Validate the diff applies (throws if invalid target).
-      applyDiff(wf.definition, args.diff as WorkflowDiff[]);
+      // Skip structural validation for v2 definitions; the DAG applier handles those separately.
+      if (!isV2(wf.definition as any)) {
+        applyDiff(wf.definition, args.diff as WorkflowDiff[]);
+      }
       const change = PendingChangeModel.create({
         conversationId: ctx.conversationId,
         workflowId: args.workflow_id as string,
@@ -211,16 +215,18 @@ export async function dispatchTool(
       const wf = WorkflowModel.getById(args.workflow_id as string);
       if (!wf) throw new Error('workflow not found');
       let mutated = false;
-      for (const station of wf.definition.stations) {
-        for (const step of station.steps) {
-          if (step.id === args.node_id) {
-            if (args.role === 'system') {
-              step.config.aiSystemPrompt = args.prompt as string;
-            } else {
-              step.config.aiPrompt = args.prompt as string;
-            }
-            mutated = true;
+      const def = wf.definition as any;
+      const allSteps: any[] = isV2(def)
+        ? (def.nodes as any[])
+        : (def.stations as any[]).flatMap((s: any) => s.steps as any[]);
+      for (const step of allSteps) {
+        if (step.id === args.node_id) {
+          if (args.role === 'system') {
+            step.config.aiSystemPrompt = args.prompt as string;
+          } else {
+            step.config.aiPrompt = args.prompt as string;
           }
+          mutated = true;
         }
       }
       if (!mutated) throw new Error('node not found');

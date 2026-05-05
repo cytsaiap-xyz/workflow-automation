@@ -4,6 +4,7 @@ import { WorkflowModel } from '../models/workflow';
 import { ExecutionEngine } from './executionEngine';
 import { createLogger } from '../utils/logger';
 import type { Workflow, Execution } from '../types/workflow';
+import { isV2 } from '../types/dag';
 
 const log = createLogger('scheduler');
 
@@ -185,11 +186,13 @@ class SchedulerService {
    * Find the cron trigger step in a workflow
    */
   private findCronTrigger(workflow: Workflow): { config: { cronExpression?: string } } | null {
-    for (const station of workflow.definition.stations) {
-      for (const step of station.steps) {
-        if (step.type === 'trigger-cron') {
-          return step;
-        }
+    const def = workflow.definition as any;
+    const allSteps: any[] = isV2(def)
+      ? (def.nodes as any[])
+      : (def.stations as any[]).flatMap((s: any) => s.steps as any[]);
+    for (const step of allSteps) {
+      if (step.type === 'trigger-cron') {
+        return step;
       }
     }
     return null;

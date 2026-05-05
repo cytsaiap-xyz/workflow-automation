@@ -13,12 +13,15 @@ describe('seedQuizWorkflow', () => {
     seedQuizWorkflow();
   });
 
-  it('seeds the quiz workflow with three stations and inputParameters', async () => {
+  it('seeds the quiz workflow with three nodes (v2) and inputParameters', async () => {
     const { WorkflowModel } = await import('../models/workflow');
     const wf = WorkflowModel.getById('builtin-quiz-generator');
     expect(wf).toBeTruthy();
-    expect(wf!.definition.stations.length).toBe(3);
-    expect(wf!.definition.inputParameters?.find(p => p.name === 'file')?.type).toBe('file');
+    // After auto-migration on read, the definition is promoted to v2 (nodes/edges).
+    // The quiz workflow has 3 stations each with 1 step → 3 nodes after migration.
+    expect((wf!.definition as any).schemaVersion).toBe(2);
+    expect((wf!.definition as any).nodes.length).toBe(3);
+    expect((wf!.definition as any).inputParameters?.find((p: any) => p.name === 'file')?.type).toBe('file');
   });
 
   it('is idempotent', async () => {

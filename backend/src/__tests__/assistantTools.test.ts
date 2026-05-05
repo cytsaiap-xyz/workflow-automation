@@ -39,7 +39,10 @@ describe('assistantTools', () => {
 
   it('get_workflow returns the workflow definition', async () => {
     const out = await dispatch('get_workflow', { workflow_id: workflowId }, { conversationId: 'c1', workflowId });
-    expect(out.definition.stations.length).toBe(1);
+    // After auto-migration the definition is v2 (nodes/edges instead of stations/steps).
+    // The seeded workflow has 1 station with 1 step → 1 node after migration.
+    expect((out.definition as any).schemaVersion).toBe(2);
+    expect((out.definition as any).nodes.length).toBe(1);
   });
 
   it('set_node_prompt mutates the system prompt directly', async () => {
@@ -47,7 +50,10 @@ describe('assistantTools', () => {
       workflow_id: workflowId, node_id: 'st', role: 'system', prompt: 'new',
     }, { conversationId: 'c1', workflowId });
     const { WorkflowModel } = await import('../models/workflow');
-    expect(WorkflowModel.getById(workflowId)!.definition.stations[0].steps[0].config.aiSystemPrompt).toBe('new');
+    // After auto-migration the definition is v2; the mutated node is in .nodes[].
+    const def = WorkflowModel.getById(workflowId)!.definition as any;
+    const node = (def.nodes as any[]).find((n: any) => n.id === 'st');
+    expect(node?.config.aiSystemPrompt).toBe('new');
   });
 
   it('propose_workflow_change creates a pending change', async () => {

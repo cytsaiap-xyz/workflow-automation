@@ -9,11 +9,45 @@ import {
   StepResult,
   ExecutionLog
 } from '../types/workflow';
+import { isV2 } from '../types/dag';
 import { ExecutionModel, LogModel } from '../models/execution';
 import { ScriptRunner, ScriptResult } from './scriptRunner';
 import { executionManager } from './executionManager';
 import { executionEventBus, ExecutionEvent } from './executionEventBus';
 import { StepExecutor } from './stepExecutor';
+
+/**
+ * Normalise a workflow definition (v1 or auto-migrated v2) into a stations array
+ * so that the v1 execution engine can drive it without further changes.
+ *
+ * For a v2 definition each node becomes a synthetic single-step station.
+ * This is a compatibility shim; a dedicated DAG executor (S4+) will replace it.
+ */
+function getStationsFromWorkflow(workflow: Workflow): Station[] {
+  const def = workflow.definition as any;
+  if (isV2(def)) {
+    return (def.nodes as any[]).map((node: any) => ({
+      // Prefix the synthetic station id so it does not collide with the step id.
+      // Step-level variable references (e.g. ${load.output.chunks}) are stored
+      // under the step id; the station id must differ to avoid clobbering them.
+      id: `_s_${node.id}`,
+      name: node.name,
+      position: node.position || { x: 0, y: 0 },
+      steps: [{
+        id: node.id,
+        name: node.name,
+        type: node.type,
+        config: node.config || {},
+        position: node.position || { x: 0, y: 0 },
+        inputVars: node.inputVars,
+        outputVars: node.outputVars,
+        timeout: node.timeout,
+        retryPolicy: node.retryPolicy,
+      }] as Step[],
+    })) as Station[];
+  }
+  return def.stations as Station[];
+}
 
 export interface ExecutionContext {
   executionId: string;
@@ -99,8 +133,9 @@ export class ExecutionEngine {
     let failed = false;
 
     // Execute stations sequentially
+    const stations = getStationsFromWorkflow(workflow);
     let cancelled = false;
-    for (const station of workflow.definition.stations) {
+    for (const station of stations) {
       if (failed) break;
 
       // Check for cancellation

@@ -11,6 +11,10 @@ function findStation(def: WorkflowDefinition, id: string) {
 
 export function applyDiff(def: WorkflowDefinition, diffs: WorkflowDiff[]): WorkflowDefinition {
   const out = clone(def);
+  // Ensure stations array exists (v2 definitions may not have it; treat as empty for v1 diff ops)
+  if (!Array.isArray(out.stations)) {
+    (out as any).stations = [];
+  }
   for (const d of diffs) {
     switch (d.kind) {
       case 'add_station': {

@@ -1,11 +1,12 @@
 import db from '../db/database';
 import { v4 as uuidv4 } from 'uuid';
-import { 
-  Workflow, 
-  WorkflowDefinition, 
-  CreateWorkflowRequest, 
-  UpdateWorkflowRequest 
+import {
+  Workflow,
+  WorkflowDefinition,
+  CreateWorkflowRequest,
+  UpdateWorkflowRequest
 } from '../types/workflow';
+import { migrateToV2 } from '../services/dagMigrator';
 
 interface WorkflowRow {
   id: string;
@@ -13,6 +14,7 @@ interface WorkflowRow {
   description: string | null;
   status: 'draft' | 'active' | 'paused';
   definition: string;
+  schema_version: number;
   created_at: string;
   updated_at: string;
 }
@@ -20,22 +22,22 @@ interface WorkflowRow {
 export class WorkflowModel {
   static getAll(): Workflow[] {
     const stmt = db.prepare(`
-      SELECT id, name, description, status, definition, created_at, updated_at 
-      FROM workflows 
+      SELECT id, name, description, status, definition, schema_version, created_at, updated_at
+      FROM workflows
       ORDER BY updated_at DESC
     `);
     const rows = stmt.all() as WorkflowRow[];
-    return rows.map(this.rowToWorkflow);
+    return rows.map(row => WorkflowModel.rowToWorkflow(row));
   }
 
   static getById(id: string): Workflow | null {
     const stmt = db.prepare(`
-      SELECT id, name, description, status, definition, created_at, updated_at 
-      FROM workflows 
+      SELECT id, name, description, status, definition, schema_version, created_at, updated_at
+      FROM workflows
       WHERE id = ?
     `);
     const row = stmt.get(id) as WorkflowRow | undefined;
-    return row ? this.rowToWorkflow(row) : null;
+    return row ? WorkflowModel.rowToWorkflow(row) : null;
   }
 
   static create(data: CreateWorkflowRequest & { id?: string }): Workflow {
@@ -104,12 +106,21 @@ export class WorkflowModel {
   }
 
   private static rowToWorkflow(row: WorkflowRow): Workflow {
+    const def = JSON.parse(row.definition) as WorkflowDefinition;
+    const schemaVersion = row.schema_version || 1;
+    const finalDef: WorkflowDefinition = schemaVersion >= 2 ? def : (() => {
+      const v2 = migrateToV2(def);
+      db.prepare(
+        'UPDATE workflows SET definition = ?, schema_version = 2, updated_at = ? WHERE id = ?'
+      ).run(JSON.stringify(v2), new Date().toISOString(), row.id);
+      return v2 as unknown as WorkflowDefinition;
+    })();
     return {
       id: row.id,
       name: row.name,
       description: row.description || undefined,
       status: row.status,
-      definition: JSON.parse(row.definition) as WorkflowDefinition,
+      definition: finalDef,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
