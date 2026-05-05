@@ -84,8 +84,11 @@ describe('Quiz workflow E2E', () => {
     // The v2 DAG engine produces one synthetic station containing all node step results.
     const stations = res.body.data.result.stations;
     expect(stations.length).toBe(1);
-    // The three nodes (load, orchestrator, writer) appear as steps[0..2] in order.
-    const writerOutput = stations[0].steps[2].output;
+    // The 7-node DAG (load, generator, reviewer, verifier, fix-loop, collect, writer).
+    // Find the writer step by its node id (stepId field in v2 DAG results).
+    const writerStep = stations[0].steps.find((s: any) => s.stepId === 'writer');
+    expect(writerStep).toBeTruthy();
+    const writerOutput = writerStep.output;
     expect(writerOutput.json.questions.length).toBeGreaterThan(0);
     expect(writerOutput.json.questions[0].answer).toBe('B');
     expect(fs.existsSync(writerOutput.filePath)).toBe(true);
