@@ -264,3 +264,6 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
 }
+
+export type { WorkflowDefinitionV2, DagNode, DagEdge } from './dag';
+export { isV2 } from './dag';
