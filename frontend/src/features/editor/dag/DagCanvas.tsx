@@ -12,6 +12,13 @@ import '@xyflow/react/dist/style.css';
 import { useDagEditorStore } from '@/shared/stores/dagEditorStore';
 import type { DagNode } from '@/shared/types/workflow';
 
+export type NodeStatus = 'pending' | 'ready' | 'running' | 'completed' | 'failed' | 'skipped';
+
+interface DagCanvasProps {
+  statuses?: Record<string, NodeStatus>;
+  readOnly?: boolean;
+}
+
 function generateId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -20,7 +27,7 @@ function generateId(): string {
   });
 }
 
-export function DagCanvas() {
+export function DagCanvas({ statuses, readOnly = false }: DagCanvasProps = {}) {
   const { nodes, edges, upsertEdge, upsertNode, selectNode, selectEdge } =
     useDagEditorStore();
 
@@ -29,6 +36,7 @@ export function DagCanvas() {
     position: n.position,
     data: { label: n.name, raw: n },
     type: 'default',
+    className: statuses?.[n.id] ? `dag-node-status-${statuses[n.id]}` : undefined,
   }));
 
   const rfEdges: Edge[] = edges.map((e) => ({
@@ -96,11 +104,13 @@ export function DagCanvas() {
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
-        onNodesChange={onNodesChange}
-        onConnect={onConnect}
-        onNodeClick={onNodeClick}
-        onEdgeClick={onEdgeClick}
+        onNodesChange={readOnly ? undefined : onNodesChange}
+        onConnect={readOnly ? undefined : onConnect}
+        onNodeClick={readOnly ? undefined : onNodeClick}
+        onEdgeClick={readOnly ? undefined : onEdgeClick}
         onPaneClick={onPaneClick}
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
         fitView
       >
         <Background />

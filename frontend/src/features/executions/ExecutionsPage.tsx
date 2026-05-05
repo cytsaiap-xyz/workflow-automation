@@ -13,13 +13,15 @@ import {
   RefreshCw,
   Bot,
 } from 'lucide-react';
-import { executionApi } from '../../shared/api/workflowApi';
+import { executionApi, workflowApi } from '../../shared/api/workflowApi';
 import { useConfirm } from '../../shared/components/ConfirmDialog';
-import type { Execution, ExecutionLog } from '../../shared/types/workflow';
+import type { Execution, ExecutionLog, Workflow } from '../../shared/types/workflow';
+import { isV2 } from '../../shared/types/workflow';
 import { QuizResultView } from './QuizResultView';
 import { AssistantChatPanel } from '../assistant/AssistantChatPanel';
 import { useAssistantStore } from '@/shared/stores/assistantStore';
 import { assistantApi } from '@/shared/api/assistantApi';
+import { RunPanelV2 } from '../editor/dag/RunPanelV2';
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, { bg: string; color: string; icon: React.ReactNode }> = {
@@ -258,6 +260,17 @@ function ExecutionRow({
   onCancel: () => void;
   onDebugWithAssistant: () => void;
 }) {
+  const [workflow, setWorkflow] = useState<Workflow | null>(null);
+
+  useEffect(() => {
+    if (!isExpanded || workflow) return;
+    workflowApi.getById(execution.workflowId).then(setWorkflow).catch(() => {
+      // silently ignore — v2 panel simply won't show
+    });
+  }, [isExpanded, execution.workflowId, workflow]);
+
+  const isWorkflowV2 = workflow != null && isV2(workflow.definition);
+
   return (
     <>
       <tr
@@ -308,6 +321,14 @@ function ExecutionRow({
       {isExpanded && (
         <tr>
           <td colSpan={8} style={{ padding: '0 16px 16px 40px', background: 'var(--bg-tertiary)' }}>
+            {/* DAG run panel for v2 workflows */}
+            {isWorkflowV2 && workflow && (
+              <div style={{ marginTop: '12px', marginBottom: '12px' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>DAG Execution View</h4>
+                <RunPanelV2 workflow={workflow} execution={execution} />
+              </div>
+            )}
+
             {/* Station/Step Results */}
             {execution.result?.stations && execution.result.stations.length > 0 && (
               <div style={{ marginTop: '12px' }}>

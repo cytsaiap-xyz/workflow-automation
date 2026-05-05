@@ -821,3 +821,25 @@ body {
     display: none;
   }
 }
+
+/* DAG node status overlays (used by RunPanelV2) */
+.react-flow__node.dag-node-status-running {
+  box-shadow: 0 0 0 2px #f59e0b;
+}
+.react-flow__node.dag-node-status-completed {
+  box-shadow: 0 0 0 2px #10b981;
+}
+.react-flow__node.dag-node-status-failed {
+  box-shadow: 0 0 0 2px #ef4444;
+}
+.react-flow__node.dag-node-status-skipped {
+  box-shadow: 0 0 0 2px #9ca3af;
+  opacity: 0.6;
+}
+.react-flow__node.dag-node-status-pending {
+  box-shadow: 0 0 0 2px #64748b;
+  opacity: 0.7;
+}
+.react-flow__node.dag-node-status-ready {
+  box-shadow: 0 0 0 2px #3b82f6;
+}
