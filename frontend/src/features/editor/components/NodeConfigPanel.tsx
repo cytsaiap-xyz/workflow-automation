@@ -7,6 +7,7 @@ import Save from 'lucide-react/dist/esm/icons/save';
 import Database from 'lucide-react/dist/esm/icons/database';
 import Package from 'lucide-react/dist/esm/icons/package';
 import { VariablePicker } from './VariablePicker';
+import { PromptHelperPopover } from '../../assistant/PromptHelperPopover';
 
 interface NodeConfigPanelProps {
   step: Step;
@@ -72,6 +73,9 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
 
   // Picker state
   const [activePicker, setActivePicker] = useState<string | null>(null);
+
+  // Prompt helper popover state
+  const [helperField, setHelperField] = useState<'aiSystemPrompt' | 'aiPrompt' | null>(null);
 
   // Retry Policy
   const [retryEnabled, setRetryEnabled] = useState(!!step.retryPolicy);
@@ -918,7 +922,30 @@ print(json.dumps({'result': result}))`}
 
             {/* System Prompt */}
             <div className="form-group">
-              <label className="form-label">System Prompt</label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="form-label">System Prompt</label>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    className="btn btn-ghost btn-xs flex gap-1 items-center"
+                    onClick={() => setHelperField(helperField === 'aiSystemPrompt' ? null : 'aiSystemPrompt')}
+                    title="Open prompt helper"
+                  >
+                    ✨ Help
+                  </button>
+                  {helperField === 'aiSystemPrompt' && (
+                    <PromptHelperPopover
+                      workflowId={workflow.id}
+                      nodeId={step.id}
+                      field="aiSystemPrompt"
+                      onUse={(newValue) => {
+                        setAiSystemPrompt(newValue);
+                        setHelperField(null);
+                      }}
+                      onClose={() => setHelperField(null)}
+                    />
+                  )}
+                </div>
+              </div>
               <textarea
                 className="form-textarea"
                 value={aiSystemPrompt}
@@ -932,12 +959,35 @@ print(json.dumps({'result': result}))`}
             <div className="form-group">
               <div className="flex justify-between items-center mb-1">
                 <label className="form-label">Prompt</label>
-                <button
-                  className="btn btn-ghost btn-xs flex gap-1 items-center"
-                  onClick={() => setActivePicker(activePicker === 'aiPrompt' ? null : 'aiPrompt')}
-                >
-                  <Database size={10} /> Insert Variable
-                </button>
+                <div className="flex gap-1 items-center">
+                  <button
+                    className="btn btn-ghost btn-xs flex gap-1 items-center"
+                    onClick={() => setActivePicker(activePicker === 'aiPrompt' ? null : 'aiPrompt')}
+                  >
+                    <Database size={10} /> Insert Variable
+                  </button>
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      className="btn btn-ghost btn-xs flex gap-1 items-center"
+                      onClick={() => setHelperField(helperField === 'aiPrompt' ? null : 'aiPrompt')}
+                      title="Open prompt helper"
+                    >
+                      ✨ Help
+                    </button>
+                    {helperField === 'aiPrompt' && (
+                      <PromptHelperPopover
+                        workflowId={workflow.id}
+                        nodeId={step.id}
+                        field="aiPrompt"
+                        onUse={(newValue) => {
+                          setAiPrompt(newValue);
+                          setHelperField(null);
+                        }}
+                        onClose={() => setHelperField(null)}
+                      />
+                    )}
+                  </div>
+                </div>
               </div>
               <textarea
                 className="form-textarea"
