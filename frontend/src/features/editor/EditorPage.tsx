@@ -21,6 +21,7 @@ import type { StepType, Execution, WorkflowDefinition } from '../../shared/types
 import { isV2 } from '../../shared/types/workflow';
 import InputParametersEditor from './components/InputParametersEditor';
 import { DagCanvas } from './dag/DagCanvas';
+import { EdgeConfigPanel } from './dag/EdgeConfigPanel';
 import { useDagEditorStore } from '../../shared/stores/dagEditorStore';
 import {
   ArrowLeft,
@@ -536,7 +537,10 @@ function EditorPage() {
         <div style={{ flex: 1, height: '100%' }}>
           {/* v2 DAG canvas */}
           {currentWorkflow && isV2(currentWorkflow.definition) && (
-            <DagCanvas />
+            <>
+              <DagCanvas />
+              <EdgeConfigPanel />
+            </>
           )}
 
           {/* v1 Station canvas (stage view) */}
