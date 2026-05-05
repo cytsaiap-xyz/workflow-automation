@@ -15,6 +15,7 @@ import SimulationPanel from './components/SimulationPanel';
 import VersionHistoryPanel from './components/VersionHistoryPanel';
 import ExecuteDialog from './components/ExecuteDialog';
 import { RunWithInputDialog } from './RunWithInputDialog';
+import { AssistantChatPanel } from '@/features/assistant/AssistantChatPanel';
 import { toast } from '../../shared/stores/toastStore';
 import type { StepType, Execution } from '../../shared/types/workflow';
 import InputParametersEditor from './components/InputParametersEditor';
@@ -615,6 +616,16 @@ function EditorPage() {
           open={showRunDialog}
           onClose={() => setShowRunDialog(false)}
           onComplete={handleRunComplete}
+        />
+      )}
+
+      {/* AI Assistant Chat Panel */}
+      {currentWorkflow && (
+        <AssistantChatPanel
+          workflowId={currentWorkflow.id}
+          onWorkflowUpdated={() => {
+            if (id) fetchWorkflow(id);
+          }}
         />
       )}
     </div>
