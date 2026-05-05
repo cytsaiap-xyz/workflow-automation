@@ -7,6 +7,7 @@ import { ExecutionEngine } from '../services/executionEngine';
 import { scheduler } from '../services/scheduler';
 import { validateCreateWorkflow, validateUpdateWorkflow } from '../middleware/validateWorkflow';
 import { uploadMiddleware } from '../middleware/uploadHandler';
+import { validateDag } from '../services/dagValidator';
 import {
   CreateWorkflowRequest,
   UpdateWorkflowRequest,
@@ -82,6 +83,17 @@ router.post('/', validateCreateWorkflow, async (req: Request, res: Response) => 
   try {
     const data: CreateWorkflowRequest = req.body;
 
+    if (data.definition && isV2(data.definition as any)) {
+      const v = validateDag(data.definition as any);
+      if (v.errors.length) {
+        return res.status(400).json({
+          success: false,
+          error: 'invalid DAG',
+          data: { errors: v.errors, warnings: v.warnings },
+        });
+      }
+    }
+
     const workflow = WorkflowModel.create(data);
     await syncSchedule(workflow); // Sync with scheduler
     
@@ -98,6 +110,17 @@ router.post('/', validateCreateWorkflow, async (req: Request, res: Response) => 
 router.put('/:id', validateUpdateWorkflow, async (req: Request, res: Response) => {
   try {
     const data: UpdateWorkflowRequest = req.body;
+
+    if (data.definition && isV2(data.definition as any)) {
+      const v = validateDag(data.definition as any);
+      if (v.errors.length) {
+        return res.status(400).json({
+          success: false,
+          error: 'invalid DAG',
+          data: { errors: v.errors, warnings: v.warnings },
+        });
+      }
+    }
 
     // Auto-version: save current definition before updating
     if (data.definition) {

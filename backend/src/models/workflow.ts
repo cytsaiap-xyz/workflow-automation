@@ -4,7 +4,8 @@ import {
   Workflow,
   WorkflowDefinition,
   CreateWorkflowRequest,
-  UpdateWorkflowRequest
+  UpdateWorkflowRequest,
+  isV2,
 } from '../types/workflow';
 import { migrateToV2 } from '../services/dagMigrator';
 
@@ -43,10 +44,11 @@ export class WorkflowModel {
   static create(data: CreateWorkflowRequest & { id?: string }): Workflow {
     const id = data.id ?? uuidv4();
     const now = new Date().toISOString();
+    const schemaVersion = isV2(data.definition as any) ? 2 : 1;
 
     const stmt = db.prepare(`
-      INSERT INTO workflows (id, name, description, status, definition, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO workflows (id, name, description, status, definition, schema_version, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -55,6 +57,7 @@ export class WorkflowModel {
       data.description || null,
       data.status || 'draft',
       JSON.stringify(data.definition),
+      schemaVersion,
       now,
       now
     );
@@ -85,6 +88,8 @@ export class WorkflowModel {
     if (data.definition !== undefined) {
       updates.push('definition = ?');
       values.push(JSON.stringify(data.definition));
+      updates.push('schema_version = ?');
+      values.push(isV2(data.definition as any) ? 2 : 1);
     }
 
     values.push(id);
