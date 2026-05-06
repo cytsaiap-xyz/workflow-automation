@@ -4,7 +4,21 @@ This file provides essential context for AI assistants working on this codebase.
 
 ## Project Overview
 
-A full-stack **visual workflow automation** platform. Users design, schedule, and monitor automated workflows through a drag-and-drop editor. Workflows consist of **stations** (sequential stages) containing **steps** (individual actions).
+A full-stack **visual workflow automation** platform. Users design, schedule, and monitor automated workflows through a free-form DAG editor (or, for legacy workflows, a sequential stations-and-steps layout that auto-migrates to a DAG on first read). Workflows are graphs of **nodes** connected by **edges**; each node is a step (HTTP call, AI prompt, script, document loader, etc.). Edges may carry a `when` expression and a named `targetPort` to route data between branches.
+
+The platform also ships an **AI workflow assistant** (right-side chat panel + per-node prompt-helper popover) that drafts prompts, scaffolds workflows, and debugs failed runs by calling the same vLLM the rest of the platform uses.
+
+### Platform vs Examples
+
+The platform itself is workflow-agnostic. To exercise the multi-agent / multi-modal capabilities end-to-end, the project ships one **built-in example**: the **Document Quiz Generator**. It uploads a PDF/PPTX/TXT, fans out across pages to a generator agent, runs reviewer + verifier in parallel, loops a fixer up to 3 times, and writes a JSON quiz file.
+
+| | Platform | Example |
+|---|---|---|
+| Owns | Editor, executor, scheduler, AI provider entity, prompt library, document loaders, multi-modal AI executor, HTTP allowlist, file upload, DAG validator, AI assistant | The 4 seeded `quiz-*` prompt templates and the seeded `Document Quiz Generator (example)` workflow |
+| Files | `backend/src/{routes,services,models,middleware,db}/`, all of `frontend/` | `backend/src/seeds/seedQuizWorkflow*.ts`, `seedPromptTemplates.ts`, `quizPromptTexts.ts` |
+| Disable | n/a — required | `LOAD_EXAMPLE_QUIZ_WORKFLOW=false` at startup |
+
+The `quiz-output-writer` step type currently lives in the platform code but is only used by the example. It will be generalized to a `json-output-writer` if a second use case appears.
 
 **Architecture:** React SPA (frontend) + Node.js/Express API (backend) + SQLite database, all served from a single Docker container in production.
 
@@ -243,6 +257,7 @@ CREATE TABLE execution_logs (
 | `HTTP_ALLOWLIST` | (loopback only) | Comma-separated hosts/CIDRs allowed for the http-request step |
 | `OFFLINE_MODE` | `false` | When `true`, slack/email node types are hidden from the editor palette |
 | `IMAGE_LONG_SIDE_PX` | `1568` | Maximum long-side pixel size for rasterized PDF pages |
+| `LOAD_EXAMPLE_QUIZ_WORKFLOW` | `true` | When `false`, skips seeding the Document Quiz Generator example workflow + its 4 quiz prompt templates |
 
 ### Frontend
 | Variable | Default | Purpose |

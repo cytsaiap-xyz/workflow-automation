@@ -1,3 +1,11 @@
+/**
+ * EXAMPLE — seeds the four quiz pipeline prompt templates used by the
+ * Document Quiz Generator example workflow. The platform's prompt library
+ * itself is empty by default; users add their own templates via the
+ * /settings/prompt-templates page.
+ *
+ * Gated at startup behind LOAD_EXAMPLE_QUIZ_WORKFLOW (see backend/src/index.ts).
+ */
 import { PromptTemplateModel } from '../models/promptTemplateModel';
 import {
   QUIZ_GENERATOR_SYSTEM,

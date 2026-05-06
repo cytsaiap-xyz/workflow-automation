@@ -1,3 +1,19 @@
+/**
+ * EXAMPLE — Document Quiz Generator workflow.
+ *
+ * This is NOT part of the core platform. It's an example workflow that
+ * demonstrates how the platform supports multi-agent pipelines, multi-modal
+ * AI calls, fan-out across pages, named-port merges, and a feedback loop.
+ *
+ * Disable with the env var LOAD_EXAMPLE_QUIZ_WORKFLOW=false at startup.
+ *
+ * The platform features this example exercises:
+ * - load-document step (PDF/PPTX/TXT)
+ * - ai-structured-output step with vision-enabled provider
+ * - script-js step with sandbox-exposed ai.call helper
+ * - fan-out node + named-port merge
+ * - quiz-output-writer step (JSON to data/uploads/<exec-id>/quiz.json)
+ */
 import { v4 as uuidv4 } from 'uuid';
 import { WorkflowModel } from '../models/workflow';
 
@@ -250,7 +266,7 @@ export function seedQuizWorkflowDag(): void {
   } else {
     WorkflowModel.create({
       id: QUIZ_WORKFLOW_ID,
-      name: 'Document Quiz Generator (built-in)',
+      name: 'Document Quiz Generator (example)',
       description: 'Generate a JSON quiz from a PDF/PPTX/TXT via a multi-agent feedback loop (DAG).',
       status: 'active',
       definition: def,

@@ -1,3 +1,8 @@
+/**
+ * EXAMPLE — system prompts for the four quiz-generation agents used by
+ * the Document Quiz Generator example workflow. Not part of the platform.
+ */
+
 export const QUIZ_GENERATOR_SYSTEM = `You are a quiz question generator. You will receive a page of source material (text and an authoritative image of the page layout) and a focus area.
 
 FOCUS AREA: \${input.focus_area}

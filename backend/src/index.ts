@@ -3,6 +3,9 @@ import { scheduler } from './services/scheduler';
 import { initDatabase } from './db/database';
 import { createLogger } from './utils/logger';
 import { seedAiProvider } from './seeds/seedAiProvider';
+// Example workflow seeders. Gated behind LOAD_EXAMPLE_QUIZ_WORKFLOW so they
+// can be disabled in production. The platform itself is workflow-agnostic;
+// the quiz generator is included as a multi-agent + multi-modal showcase.
 import { seedPromptTemplates } from './seeds/seedPromptTemplates';
 import { seedQuizWorkflow } from './seeds/seedQuizWorkflow';
 
@@ -14,8 +17,16 @@ async function main() {
   await initDatabase();
   log.info('Database initialized');
   seedAiProvider();
-  seedPromptTemplates();
-  seedQuizWorkflow();
+
+  // Optional example: the Document Quiz Generator workflow. Disable with
+  // LOAD_EXAMPLE_QUIZ_WORKFLOW=false to ship a clean platform-only build.
+  if (process.env.LOAD_EXAMPLE_QUIZ_WORKFLOW !== 'false') {
+    seedPromptTemplates();
+    seedQuizWorkflow();
+    log.info('Loaded example: Document Quiz Generator (set LOAD_EXAMPLE_QUIZ_WORKFLOW=false to skip)');
+  } else {
+    log.info('Skipped example seeders (LOAD_EXAMPLE_QUIZ_WORKFLOW=false)');
+  }
 
   const server = app.listen(PORT, async () => {
     log.info('Workflow Automation Backend running on http://localhost:%s', PORT);
