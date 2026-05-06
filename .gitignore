@@ -70,6 +70,8 @@ releases/
 *.tsbuildinfo
 *.d.ts
 *.d.ts.map
+# Exception: hand-written Express type augmentation (not a build artifact)
+!backend/src/types/express.d.ts
 
 # SQLite database files (runtime/temporary)
 *.db

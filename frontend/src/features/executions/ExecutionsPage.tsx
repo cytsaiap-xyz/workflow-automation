@@ -11,10 +11,17 @@ import {
   ChevronDown,
   ChevronRight,
   RefreshCw,
+  Bot,
 } from 'lucide-react';
-import { executionApi } from '../../shared/api/workflowApi';
+import { executionApi, workflowApi } from '../../shared/api/workflowApi';
 import { useConfirm } from '../../shared/components/ConfirmDialog';
-import type { Execution, ExecutionLog } from '../../shared/types/workflow';
+import type { Execution, ExecutionLog, Workflow } from '../../shared/types/workflow';
+import { isV2 } from '../../shared/types/workflow';
+import { QuizResultView } from './QuizResultView';
+import { AssistantChatPanel } from '../assistant/AssistantChatPanel';
+import { useAssistantStore } from '@/shared/stores/assistantStore';
+import { assistantApi } from '@/shared/api/assistantApi';
+import { RunPanelV2 } from '../editor/dag/RunPanelV2';
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, { bg: string; color: string; icon: React.ReactNode }> = {
@@ -65,6 +72,28 @@ export default function ExecutionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [logs, setLogs] = useState<Record<string, ExecutionLog[]>>({});
+  const [assistantWorkflowId, setAssistantWorkflowId] = useState<string | null>(null);
+
+  const handleDebugWithAssistant = useCallback(async (execution: Execution) => {
+    const { setPanelOpen, setConversation, appendUser, appendStreaming, appendToolCall, attachToolResult, addPendingChange, setStreaming } = useAssistantStore.getState();
+    setAssistantWorkflowId(execution.workflowId);
+    setPanelOpen(true);
+    const c = await assistantApi.conversation.findOrCreate({
+      workflowId: execution.workflowId,
+      surface: 'panel',
+    });
+    setConversation(c.id, c.messages);
+    const debugPrompt = `Execution ${execution.id} failed. Please fetch its logs and explain what went wrong, then propose a fix.`;
+    appendUser(debugPrompt);
+    setStreaming(true);
+    assistantApi.sendMessage(c.id, debugPrompt, (e: Record<string, unknown>) => {
+      if (e.type === 'token') appendStreaming(e.value as string);
+      else if (e.type === 'tool_call') appendToolCall(e.name as string, e.args);
+      else if (e.type === 'tool_result') attachToolResult(e.name as string, e.summary as string);
+      else if (e.type === 'pending_change') addPendingChange(e.change_id as string);
+      else if (e.type === 'done' || e.type === 'error') setStreaming(false);
+    });
+  }, []);
 
   const fetchExecutions = useCallback(async () => {
     try {
@@ -149,6 +178,10 @@ export default function ExecutionsPage() {
         </div>
       </header>
 
+      {assistantWorkflowId && (
+        <AssistantChatPanel workflowId={assistantWorkflowId} />
+      )}
+
       <main className="main-content">
         {error && (
           <div className="card" style={{
@@ -194,6 +227,7 @@ export default function ExecutionsPage() {
                     onToggle={() => toggleExpand(exec.id)}
                     onDelete={() => handleDelete(exec.id)}
                     onCancel={() => handleCancel(exec.id)}
+                    onDebugWithAssistant={() => handleDebugWithAssistant(exec)}
                   />
                 ))}
               </tbody>
@@ -216,7 +250,7 @@ const tdStyle: React.CSSProperties = {
 };
 
 function ExecutionRow({
-  execution, isExpanded, logs, onToggle, onDelete, onCancel,
+  execution, isExpanded, logs, onToggle, onDelete, onCancel, onDebugWithAssistant,
 }: {
   execution: Execution;
   isExpanded: boolean;
@@ -224,7 +258,19 @@ function ExecutionRow({
   onToggle: () => void;
   onDelete: () => void;
   onCancel: () => void;
+  onDebugWithAssistant: () => void;
 }) {
+  const [workflow, setWorkflow] = useState<Workflow | null>(null);
+
+  useEffect(() => {
+    if (!isExpanded || workflow) return;
+    workflowApi.getById(execution.workflowId).then(setWorkflow).catch(() => {
+      // silently ignore — v2 panel simply won't show
+    });
+  }, [isExpanded, execution.workflowId, workflow]);
+
+  const isWorkflowV2 = workflow != null && isV2(workflow.definition);
+
   return (
     <>
       <tr
@@ -275,6 +321,14 @@ function ExecutionRow({
       {isExpanded && (
         <tr>
           <td colSpan={8} style={{ padding: '0 16px 16px 40px', background: 'var(--bg-tertiary)' }}>
+            {/* DAG run panel for v2 workflows */}
+            {isWorkflowV2 && workflow && (
+              <div style={{ marginTop: '12px', marginBottom: '12px' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>DAG Execution View</h4>
+                <RunPanelV2 workflow={workflow} execution={execution} />
+              </div>
+            )}
+
             {/* Station/Step Results */}
             {execution.result?.stations && execution.result.stations.length > 0 && (
               <div style={{ marginTop: '12px' }}>
@@ -308,6 +362,23 @@ function ExecutionRow({
               </div>
             )}
 
+            {/* Quiz Result View — rendered when a quiz-output-writer step produced output */}
+            {(() => {
+              const quizStep = execution.result?.stations
+                ?.flatMap((s) => s.steps)
+                .find((s) => s.stepType === 'quiz-output-writer' && s.output?.json);
+              if (!quizStep) return null;
+              return (
+                <div style={{ marginTop: '12px' }}>
+                  <h4 style={{ fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Quiz Output</h4>
+                  <QuizResultView
+                    json={quizStep.output!.json}
+                    filePath={quizStep.output!.filePath as string | undefined}
+                  />
+                </div>
+              );
+            })()}
+
             {/* Logs */}
             {logs && logs.length > 0 && (
               <div style={{ marginTop: '12px' }}>
@@ -338,6 +409,20 @@ function ExecutionRow({
             )}
             {logs && logs.length === 0 && (
               <p className="text-muted text-sm" style={{ marginTop: '8px' }}>No logs available.</p>
+            )}
+
+            {/* Debug deep-link button for failed executions */}
+            {execution.status === 'failed' && (
+              <div style={{ marginTop: '14px' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={(e) => { e.stopPropagation(); onDebugWithAssistant(); }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Bot size={15} />
+                  Ask the assistant about this failure
+                </button>
+              </div>
             )}
           </td>
         </tr>

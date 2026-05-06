@@ -60,6 +60,16 @@ function validateDefinition(definition: any): string | null {
   if (typeof definition !== 'object' || definition === null || Array.isArray(definition)) {
     return 'definition must be an object';
   }
+  // v2 definitions use nodes/edges instead of stations; skip station validation
+  if (definition.schemaVersion === 2) {
+    if (!Array.isArray(definition.nodes)) {
+      return 'definition.nodes must be an array (v2)';
+    }
+    if (!Array.isArray(definition.edges)) {
+      return 'definition.edges must be an array (v2)';
+    }
+    return null;
+  }
   if (!Array.isArray(definition.stations)) {
     return 'definition.stations must be an array';
   }

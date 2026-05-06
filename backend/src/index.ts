@@ -2,6 +2,9 @@ import app from './app';
 import { scheduler } from './services/scheduler';
 import { initDatabase } from './db/database';
 import { createLogger } from './utils/logger';
+import { seedAiProvider } from './seeds/seedAiProvider';
+import { seedPromptTemplates } from './seeds/seedPromptTemplates';
+import { seedQuizWorkflow } from './seeds/seedQuizWorkflow';
 
 const log = createLogger('index');
 const PORT = process.env.PORT || 3002;
@@ -10,6 +13,9 @@ async function main() {
   // Database must be ready before accepting any requests
   await initDatabase();
   log.info('Database initialized');
+  seedAiProvider();
+  seedPromptTemplates();
+  seedQuizWorkflow();
 
   const server = app.listen(PORT, async () => {
     log.info('Workflow Automation Backend running on http://localhost:%s', PORT);

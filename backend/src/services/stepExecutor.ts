@@ -278,6 +278,56 @@ export class StepExecutor {
         return AiExecutor.executeRouter(step.config, { ...context.variables, inputData: resolvedInput });
       }
 
+      case 'load-document': {
+        const sourcePath = ScriptRunner.interpolateVariables(
+          step.config.loadDocumentSourcePath || '',
+          { ...context.variables, inputData: resolvedInput }
+        );
+        if (!sourcePath) {
+          return { success: false, error: 'load-document: source path is empty', logs: [] };
+        }
+        const { loadDocument } = await import('./documentLoader');
+        try {
+          const executionId = context.variables.executionId || 'unknown';
+          const chunks = await loadDocument(sourcePath, {
+            executionId,
+            maxChunkChars: step.config.loadDocumentMaxChunkChars,
+          });
+          return {
+            success: true,
+            output: { chunks, count: chunks.length },
+            logs: [`Loaded ${chunks.length} chunk(s) from ${sourcePath}`],
+          };
+        } catch (e: any) {
+          return { success: false, error: `load-document failed: ${e.message}`, logs: [] };
+        }
+      }
+
+      case 'quiz-output-writer': {
+        const { writeQuizOutput } = await import('./quizOutputWriter');
+        try {
+          const out = await writeQuizOutput(
+            {
+              questions: resolvedInput.questions,
+              sourceFile: resolvedInput.sourceFile,
+              focusArea: resolvedInput.focusArea,
+            },
+            {
+              executionId: context.variables.executionId || 'unknown',
+              directory: step.config.quizOutputDirectory,
+              filename: step.config.quizOutputFilename,
+            }
+          );
+          return {
+            success: true,
+            output: { filePath: out.filePath, json: out.json },
+            logs: [`Wrote quiz JSON to ${out.filePath}`],
+          };
+        } catch (e: any) {
+          return { success: false, error: `quiz-output-writer failed: ${e.message}`, logs: [] };
+        }
+      }
+
       default:
         return {
           success: false,

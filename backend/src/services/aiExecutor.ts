@@ -1,22 +1,143 @@
 import OpenAI from 'openai';
+import fs from 'fs/promises';
+import path from 'path';
 import { StepConfig } from '../types/workflow';
 import { ScriptRunner, ScriptResult } from './scriptRunner';
+import { AiProviderModel } from '../models/aiProviderModel';
+import { PromptTemplateModel } from '../models/promptTemplateModel';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('aiExecutor');
 
-export class AiExecutor {
-  /**
-   * Create an OpenAI client configured for the vLLM server
-   */
-  private static createClient(config: StepConfig): OpenAI {
-    return new OpenAI({
-      baseURL: config.aiBaseUrl,
-      apiKey: config.aiApiKey || 'not-needed', // vLLM may not require API key
-      defaultHeaders: config.aiHeaders || {},
-    });
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+interface ResolvedProvider {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  headers?: Record<string, string>;
+  supportsVision: boolean;
+}
+
+interface ResolvedPrompts {
+  systemContent: string | null;
+  userContent: string;
+  needsImage: boolean;
+}
+
+type MultipartContent = Array<
+  { type: 'text'; text: string } |
+  { type: 'image_url'; image_url: { url: string } }
+>;
+
+function resolveProvider(config: StepConfig): ResolvedProvider | null {
+  // 1. Explicit provider ID
+  if (config.aiProviderId) {
+    const p = AiProviderModel.getById(config.aiProviderId);
+    if (p) {
+      return {
+        baseUrl: p.baseUrl,
+        model: p.model,
+        apiKey: p.apiKey,
+        headers: p.headers,
+        supportsVision: p.supportsVision,
+      };
+    }
   }
 
+  // 2. Inline base URL (backwards-compat)
+  if (config.aiBaseUrl) {
+    return {
+      baseUrl: config.aiBaseUrl,
+      model: config.aiModel || 'default',
+      apiKey: config.aiApiKey,
+      headers: config.aiHeaders,
+      supportsVision: false,
+    };
+  }
+
+  // 3. Default provider from DB
+  const def = AiProviderModel.getDefault();
+  if (def) {
+    return {
+      baseUrl: def.baseUrl,
+      model: def.model,
+      apiKey: def.apiKey,
+      headers: def.headers,
+      supportsVision: def.supportsVision,
+    };
+  }
+
+  return null;
+}
+
+function resolvePrompts(config: StepConfig, inputContext: Record<string, any>): ResolvedPrompts {
+  let systemContent: string | null = null;
+  let userContent = '';
+  let needsImage = false;
+
+  // System prompt
+  if (config.aiPromptTemplateSystemId) {
+    const t = PromptTemplateModel.getById(config.aiPromptTemplateSystemId);
+    if (t) {
+      systemContent = ScriptRunner.interpolateVariables(t.content, inputContext);
+      if (t.requiresVision) needsImage = true;
+    }
+  } else if (config.aiSystemPrompt) {
+    systemContent = ScriptRunner.interpolateVariables(config.aiSystemPrompt, inputContext);
+  }
+
+  // User prompt
+  if (config.aiPromptTemplateUserId) {
+    const t = PromptTemplateModel.getById(config.aiPromptTemplateUserId);
+    if (t) {
+      userContent = ScriptRunner.interpolateVariables(t.content, inputContext);
+      if (t.requiresVision) needsImage = true;
+    }
+  } else if (config.aiPrompt) {
+    userContent = ScriptRunner.interpolateVariables(config.aiPrompt, inputContext);
+  }
+
+  return { systemContent, userContent, needsImage };
+}
+
+async function buildUserContent(
+  text: string,
+  needsImage: boolean,
+  providerSupportsVision: boolean,
+  imagePath: string | undefined
+): Promise<string | MultipartContent> {
+  if (!needsImage || !providerSupportsVision || !imagePath) {
+    return text;
+  }
+  const data = await fs.readFile(imagePath);
+  const ext = path.extname(imagePath).slice(1).toLowerCase() || 'png';
+  const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
+  return [
+    { type: 'text', text },
+    { type: 'image_url', image_url: { url: `data:${mime};base64,${data.toString('base64')}` } },
+  ];
+}
+
+function pickImagePath(inputContext: Record<string, any>): string | undefined {
+  return inputContext?.input?.imagePath ?? inputContext?.imagePath ?? undefined;
+}
+
+function createClient(provider: ResolvedProvider): OpenAI {
+  return new OpenAI({
+    baseURL: provider.baseUrl,
+    apiKey: provider.apiKey || 'not-needed',
+    defaultHeaders: provider.headers || {},
+  });
+}
+
+// ---------------------------------------------------------------------------
+// AiExecutor
+// ---------------------------------------------------------------------------
+
+export class AiExecutor {
   /**
    * AI Prompt - single LLM completion call
    */
@@ -26,22 +147,27 @@ export class AiExecutor {
   ): Promise<ScriptResult> {
     const logs: string[] = [];
     try {
-      const client = this.createClient(config);
-      const prompt = ScriptRunner.interpolateVariables(config.aiPrompt || '', inputContext);
-      const systemPrompt = config.aiSystemPrompt
-        ? ScriptRunner.interpolateVariables(config.aiSystemPrompt, inputContext)
-        : undefined;
+      const provider = resolveProvider(config);
+      if (!provider) {
+        return { success: false, error: 'AI Prompt failed: no provider configured', logs };
+      }
+
+      const client = createClient(provider);
+      const { systemContent, userContent, needsImage } = resolvePrompts(config, inputContext);
 
       const messages: OpenAI.ChatCompletionMessageParam[] = [];
-      if (systemPrompt) {
-        messages.push({ role: 'system', content: systemPrompt });
+      if (systemContent) {
+        messages.push({ role: 'system', content: systemContent });
       }
-      messages.push({ role: 'user', content: prompt });
+      const userMsgContent = await buildUserContent(
+        userContent, needsImage, provider.supportsVision, pickImagePath(inputContext)
+      );
+      messages.push({ role: 'user', content: userMsgContent as any });
 
-      logs.push(`Sending prompt to ${config.aiBaseUrl} (model: ${config.aiModel})`);
+      logs.push(`Sending prompt to ${provider.baseUrl} (model: ${provider.model})`);
 
       const completion = await client.chat.completions.create({
-        model: config.aiModel || 'default',
+        model: provider.model,
         messages,
         temperature: config.aiTemperature ?? 0.7,
         max_tokens: config.aiMaxTokens ?? 2048,
@@ -93,22 +219,30 @@ export class AiExecutor {
   ): Promise<ScriptResult> {
     const logs: string[] = [];
     try {
-      const client = this.createClient(config);
-      const prompt = ScriptRunner.interpolateVariables(config.aiPrompt || '', inputContext);
-      const systemPrompt = config.aiSystemPrompt
-        ? ScriptRunner.interpolateVariables(config.aiSystemPrompt, inputContext)
-        : 'You are a helpful assistant. Respond with valid JSON only.';
+      const provider = resolveProvider(config);
+      if (!provider) {
+        return { success: false, error: 'AI Structured Output failed: no provider configured', logs };
+      }
+
+      const client = createClient(provider);
+      const { systemContent, userContent, needsImage } = resolvePrompts(config, inputContext);
+
+      const effectiveSystem = systemContent ?? 'You are a helpful assistant. Respond with valid JSON only.';
+
+      const userMsgContent = await buildUserContent(
+        userContent, needsImage, provider.supportsVision, pickImagePath(inputContext)
+      );
 
       const messages: OpenAI.ChatCompletionMessageParam[] = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt },
+        { role: 'system', content: effectiveSystem },
+        { role: 'user', content: userMsgContent as any },
       ];
 
-      logs.push(`Sending structured output request to ${config.aiBaseUrl} (model: ${config.aiModel})`);
+      logs.push(`Sending structured output request to ${provider.baseUrl} (model: ${provider.model})`);
 
       // Build request params
       const params: OpenAI.ChatCompletionCreateParamsNonStreaming = {
-        model: config.aiModel || 'default',
+        model: provider.model,
         messages,
         temperature: config.aiTemperature ?? 0.3,
         max_tokens: config.aiMaxTokens ?? 2048,
@@ -179,17 +313,22 @@ export class AiExecutor {
     const allToolCalls: any[] = [];
 
     try {
-      const client = this.createClient(config);
-      const prompt = ScriptRunner.interpolateVariables(config.aiPrompt || '', inputContext);
-      const systemPrompt = config.aiSystemPrompt
-        ? ScriptRunner.interpolateVariables(config.aiSystemPrompt, inputContext)
-        : undefined;
+      const provider = resolveProvider(config);
+      if (!provider) {
+        return { success: false, error: 'AI Agent failed: no provider configured', output: { toolCalls: allToolCalls }, logs };
+      }
+
+      const client = createClient(provider);
+      const { systemContent, userContent, needsImage } = resolvePrompts(config, inputContext);
 
       const messages: OpenAI.ChatCompletionMessageParam[] = [];
-      if (systemPrompt) {
-        messages.push({ role: 'system', content: systemPrompt });
+      if (systemContent) {
+        messages.push({ role: 'system', content: systemContent });
       }
-      messages.push({ role: 'user', content: prompt });
+      const userMsgContent = await buildUserContent(
+        userContent, needsImage, provider.supportsVision, pickImagePath(inputContext)
+      );
+      messages.push({ role: 'user', content: userMsgContent as any });
 
       // Build tools array for the API
       const tools: OpenAI.ChatCompletionTool[] | undefined = config.aiTools?.map(t => ({
@@ -209,7 +348,7 @@ export class AiExecutor {
         iterations++;
 
         const completion = await client.chat.completions.create({
-          model: config.aiModel || 'default',
+          model: provider.model,
           messages,
           temperature: config.aiTemperature ?? 0.7,
           max_tokens: config.aiMaxTokens ?? 2048,
@@ -317,7 +456,12 @@ export class AiExecutor {
   ): Promise<ScriptResult> {
     const logs: string[] = [];
     try {
-      const client = this.createClient(config);
+      const provider = resolveProvider(config);
+      if (!provider) {
+        return { success: false, error: 'AI Router failed: no provider configured', logs };
+      }
+
+      const client = createClient(provider);
       const prompt = ScriptRunner.interpolateVariables(config.aiPrompt || '', inputContext);
 
       // Build route descriptions for the LLM
@@ -340,10 +484,10 @@ export class AiExecutor {
         { role: 'user', content: prompt },
       ];
 
-      logs.push(`Routing decision via ${config.aiBaseUrl} (model: ${config.aiModel}, ${routes.length} routes)`);
+      logs.push(`Routing decision via ${provider.baseUrl} (model: ${provider.model}, ${routes.length} routes)`);
 
       const completion = await client.chat.completions.create({
-        model: config.aiModel || 'default',
+        model: provider.model,
         messages,
         temperature: config.aiTemperature ?? 0.3,
         max_tokens: config.aiMaxTokens ?? 256,

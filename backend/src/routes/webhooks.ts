@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { WorkflowModel } from '../models/workflow';
 import { ExecutionModel } from '../models/execution';
 import { ExecutionEngine } from '../services/executionEngine';
+import { isV2 } from '../types/dag';
 
 const router = Router();
 
@@ -24,15 +25,16 @@ router.all('/:id', async (req: Request, res: Response) => {
     }
 
     // Find webhook trigger node and validate method
-    let webhookTrigger;
-    for (const station of workflow.definition.stations) {
-      for (const step of station.steps) {
-        if (step.type === 'trigger-webhook') {
-          webhookTrigger = step;
-          break;
-        }
+    let webhookTrigger: any;
+    const def = workflow.definition as any;
+    const allSteps = isV2(def)
+      ? (def.nodes as any[])
+      : (def.stations as any[]).flatMap((s: any) => s.steps as any[]);
+    for (const step of allSteps) {
+      if (step.type === 'trigger-webhook') {
+        webhookTrigger = step;
+        break;
       }
-      if (webhookTrigger) break;
     }
 
     if (!webhookTrigger) {

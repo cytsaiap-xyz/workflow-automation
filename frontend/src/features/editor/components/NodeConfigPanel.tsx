@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import type { Step, Workflow } from '../../../shared/types/workflow';
-import { STEP_TYPE_INFO } from '../../../shared/types/workflow';
+import { STEP_TYPE_INFO, isV2 } from '../../../shared/types/workflow';
 import X from 'lucide-react/dist/esm/icons/x';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2';
 import Save from 'lucide-react/dist/esm/icons/save';
 import Database from 'lucide-react/dist/esm/icons/database';
 import Package from 'lucide-react/dist/esm/icons/package';
 import { VariablePicker } from './VariablePicker';
+import { PromptHelperPopover } from '../../assistant/PromptHelperPopover';
+import { NodeAdvancedSection } from '../dag/NodeAdvancedSection';
+import { useDagEditorStore } from '../../../shared/stores/dagEditorStore';
 
 interface NodeConfigPanelProps {
   step: Step;
@@ -73,11 +76,21 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
   // Picker state
   const [activePicker, setActivePicker] = useState<string | null>(null);
 
+  // Prompt helper popover state
+  const [helperField, setHelperField] = useState<'aiSystemPrompt' | 'aiPrompt' | null>(null);
+
   // Retry Policy
   const [retryEnabled, setRetryEnabled] = useState(!!step.retryPolicy);
   const [maxAttempts, setMaxAttempts] = useState(step.retryPolicy?.maxAttempts || 3);
   const [initialInterval, setInitialInterval] = useState(step.retryPolicy?.initialInterval || 1000);
   const [backoffCoefficient, setBackoffCoefficient] = useState(step.retryPolicy?.backoffCoefficient || 2);
+
+  // DAG v2 advanced section
+  const dagNodes = useDagEditorStore(s => s.nodes);
+  const upsertNode = useDagEditorStore(s => s.upsertNode);
+  const isV2Workflow = isV2(workflow.definition);
+  const dagNode = isV2Workflow ? dagNodes.find(n => n.id === step.id) ?? null : null;
+  const otherIds = dagNode ? dagNodes.filter(n => n.id !== dagNode.id).map(n => n.id) : [];
 
   useEffect(() => {
     setName(step.name);
@@ -918,7 +931,30 @@ print(json.dumps({'result': result}))`}
 
             {/* System Prompt */}
             <div className="form-group">
-              <label className="form-label">System Prompt</label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="form-label">System Prompt</label>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    className="btn btn-ghost btn-xs flex gap-1 items-center"
+                    onClick={() => setHelperField(helperField === 'aiSystemPrompt' ? null : 'aiSystemPrompt')}
+                    title="Open prompt helper"
+                  >
+                    ✨ Help
+                  </button>
+                  {helperField === 'aiSystemPrompt' && (
+                    <PromptHelperPopover
+                      workflowId={workflow.id}
+                      nodeId={step.id}
+                      field="aiSystemPrompt"
+                      onUse={(newValue) => {
+                        setAiSystemPrompt(newValue);
+                        setHelperField(null);
+                      }}
+                      onClose={() => setHelperField(null)}
+                    />
+                  )}
+                </div>
+              </div>
               <textarea
                 className="form-textarea"
                 value={aiSystemPrompt}
@@ -932,12 +968,35 @@ print(json.dumps({'result': result}))`}
             <div className="form-group">
               <div className="flex justify-between items-center mb-1">
                 <label className="form-label">Prompt</label>
-                <button
-                  className="btn btn-ghost btn-xs flex gap-1 items-center"
-                  onClick={() => setActivePicker(activePicker === 'aiPrompt' ? null : 'aiPrompt')}
-                >
-                  <Database size={10} /> Insert Variable
-                </button>
+                <div className="flex gap-1 items-center">
+                  <button
+                    className="btn btn-ghost btn-xs flex gap-1 items-center"
+                    onClick={() => setActivePicker(activePicker === 'aiPrompt' ? null : 'aiPrompt')}
+                  >
+                    <Database size={10} /> Insert Variable
+                  </button>
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      className="btn btn-ghost btn-xs flex gap-1 items-center"
+                      onClick={() => setHelperField(helperField === 'aiPrompt' ? null : 'aiPrompt')}
+                      title="Open prompt helper"
+                    >
+                      ✨ Help
+                    </button>
+                    {helperField === 'aiPrompt' && (
+                      <PromptHelperPopover
+                        workflowId={workflow.id}
+                        nodeId={step.id}
+                        field="aiPrompt"
+                        onUse={(newValue) => {
+                          setAiPrompt(newValue);
+                          setHelperField(null);
+                        }}
+                        onClose={() => setHelperField(null)}
+                      />
+                    )}
+                  </div>
+                </div>
               </div>
               <textarea
                 className="form-textarea"
@@ -1197,8 +1256,8 @@ print(json.dumps({'result': result}))`}
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-sm font-semibold">Retry Policy</h4>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   className="sr-only peer"
                   checked={retryEnabled}
                   onChange={(e) => setRetryEnabled(e.target.checked)}
@@ -1245,6 +1304,15 @@ print(json.dumps({'result': result}))`}
               </div>
             )}
           </div>
+        )}
+
+        {/* DAG v2 Advanced Section - fan-out and error policy */}
+        {dagNode && (
+          <NodeAdvancedSection
+            node={dagNode}
+            otherNodeIds={otherIds}
+            onChange={(patch) => upsertNode({ ...dagNode, ...patch })}
+          />
         )}
       </div>
 

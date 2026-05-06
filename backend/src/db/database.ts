@@ -91,6 +91,7 @@ const SCHEMA_SQL = `
     description TEXT,
     status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'active', 'paused')),
     definition TEXT NOT NULL,
+    schema_version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -134,6 +135,69 @@ const SCHEMA_SQL = `
   );
 
   CREATE INDEX IF NOT EXISTS idx_versions_workflow_id ON workflow_versions(workflow_id, version DESC);
+
+  CREATE TABLE IF NOT EXISTS ai_providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    model TEXT NOT NULL,
+    api_key TEXT,
+    headers TEXT,
+    supports_vision INTEGER DEFAULT 0,
+    is_default INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS prompt_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('system','user')),
+    content TEXT NOT NULL,
+    description TEXT,
+    requires_vision INTEGER DEFAULT 0,
+    tags TEXT,
+    builtin INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_prompt_templates_tags ON prompt_templates(tags);
+
+  CREATE TABLE IF NOT EXISTS assistant_conversations (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    surface TEXT NOT NULL CHECK(surface IN ('panel','node-popover')),
+    node_id TEXT,
+    messages TEXT NOT NULL DEFAULT '[]',
+    summary TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_conv_workflow ON assistant_conversations(workflow_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_conv_node
+    ON assistant_conversations(workflow_id, node_id)
+    WHERE surface = 'node-popover';
+
+  CREATE TABLE IF NOT EXISTS pending_changes (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL,
+    diff TEXT NOT NULL,
+    rationale TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','applied','rejected')),
+    created_at TEXT DEFAULT (datetime('now')),
+    resolved_at TEXT,
+    FOREIGN KEY (conversation_id) REFERENCES assistant_conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
 `;
 
 export async function initDatabase(): Promise<void> {
@@ -159,6 +223,11 @@ export async function initDatabase(): Promise<void> {
   _db = new SqlJsAdapter(sqlDb, DB_PATH);
   _db.pragma('foreign_keys = ON');
   _db.exec(SCHEMA_SQL);
+  try {
+    _db!.exec("ALTER TABLE workflows ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 1");
+  } catch (e) {
+    // ignore — column already exists on fresh DBs created with the new schema
+  }
 }
 
 /**

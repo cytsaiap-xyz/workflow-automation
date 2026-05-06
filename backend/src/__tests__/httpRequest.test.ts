@@ -39,6 +39,9 @@ function createMockRequest() {
 describe('HTTP Request Step', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Allow api.example.com so the mocked http tests are not blocked by the allowlist guard
+    process.env.HTTP_ALLOWLIST = 'localhost,127.0.0.1,api.example.com';
+    delete process.env.VLLM_BASE_URL;
   });
 
   it('makes a GET request and returns response', async () => {

@@ -14,9 +14,15 @@ import StationConfigPanel from './components/StationConfigPanel';
 import SimulationPanel from './components/SimulationPanel';
 import VersionHistoryPanel from './components/VersionHistoryPanel';
 import ExecuteDialog from './components/ExecuteDialog';
+import { RunWithInputDialog } from './RunWithInputDialog';
+import { AssistantChatPanel } from '@/features/assistant/AssistantChatPanel';
 import { toast } from '../../shared/stores/toastStore';
-import type { StepType } from '../../shared/types/workflow';
+import type { StepType, Execution, WorkflowDefinition } from '../../shared/types/workflow';
+import { isV2 } from '../../shared/types/workflow';
 import InputParametersEditor from './components/InputParametersEditor';
+import { DagCanvas } from './dag/DagCanvas';
+import { EdgeConfigPanel } from './dag/EdgeConfigPanel';
+import { useDagEditorStore } from '../../shared/stores/dagEditorStore';
 import {
   ArrowLeft,
   Save,
@@ -60,6 +66,9 @@ function EditorPage() {
     updateWorkflow,
   } = useWorkflowStore();
 
+  // DAG store
+  const { setGraph: setDagGraph, nodes: dagNodes, edges: dagEdges } = useDagEditorStore();
+
   // Input dialog hook
   const { prompt: showInputDialog } = useInput();
   const { confirm } = useConfirm();
@@ -70,6 +79,7 @@ function EditorPage() {
   const [showSimulation, setShowSimulation] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showExecuteDialog, setShowExecuteDialog] = useState<'execute' | 'simulate' | null>(null);
+  const [showRunDialog, setShowRunDialog] = useState(false);
   const [showInputParams, setShowInputParams] = useState(false);
   
   // Track unsaved changes
@@ -84,6 +94,30 @@ function EditorPage() {
       setCurrentWorkflow(null);
     }
   }, [id, fetchWorkflow, setCurrentWorkflow]);
+
+  // Populate the dag store when a v2 workflow is loaded
+  useEffect(() => {
+    if (!currentWorkflow) return;
+    const def = currentWorkflow.definition;
+    if (isV2(def)) {
+      setDagGraph(def.nodes ?? [], def.edges ?? []);
+    }
+  }, [currentWorkflow?.id, setDagGraph]); // only re-run on workflow identity change
+
+  // Sync dag store changes back into currentWorkflow so the existing save flow works
+  useEffect(() => {
+    if (!currentWorkflow) return;
+    const def = currentWorkflow.definition;
+    if (!isV2(def)) return;
+
+    setCurrentWorkflow({
+      ...currentWorkflow,
+      // Cast needed: dagNodes/dagEdges are v2-only fields not in WorkflowDefinition type
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      definition: { ...def, nodes: dagNodes, edges: dagEdges } as any as WorkflowDefinition,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dagNodes, dagEdges]); // intentionally omit currentWorkflow to avoid loop
 
   // Store original workflow for change detection
   useEffect(() => {
@@ -122,25 +156,31 @@ function EditorPage() {
     setHasUnsavedChanges(false);
   }, [id]);
 
+  // v1-safe accessor for stations array
+  const v1Stations = useMemo(() => {
+    if (!currentWorkflow || isV2(currentWorkflow.definition)) return [];
+    return currentWorkflow.definition.stations;
+  }, [currentWorkflow]);
+
   // Get current stage for Step View
   const currentStage = useMemo(() => {
     if (editorView.type !== 'step-view') return null;
-    return currentWorkflow?.definition.stations.find(s => s.id === editorView.stageId) || null;
-  }, [editorView, currentWorkflow]);
+    return v1Stations.find(s => s.id === editorView.stageId) || null;
+  }, [editorView, v1Stations]);
 
   // Get selected step
   const selectedStep = useMemo(() => {
-    if (!selectedStepId || !currentWorkflow) return null;
-    return currentWorkflow.definition.stations
+    if (!selectedStepId) return null;
+    return v1Stations
       .flatMap(s => s.steps)
       .find(s => s.id === selectedStepId) || null;
-  }, [selectedStepId, currentWorkflow]);
+  }, [selectedStepId, v1Stations]);
 
   // Get selected station
   const selectedStation = useMemo(() => {
-    if (!selectedStationId || !currentWorkflow) return null;
-    return currentWorkflow.definition.stations.find(s => s.id === selectedStationId) || null;
-  }, [selectedStationId, currentWorkflow]);
+    if (!selectedStationId) return null;
+    return v1Stations.find(s => s.id === selectedStationId) || null;
+  }, [selectedStationId, v1Stations]);
 
   // Breadcrumb items
   const breadcrumbItems = useMemo(() => {
@@ -227,8 +267,20 @@ function EditorPage() {
         setHasUnsavedChanges(false);
       }
       toast.success('Workflow saved');
-    } catch {
-      toast.error('Failed to save workflow');
+    } catch (err: unknown) {
+      const e = err as Error & { validationData?: { errors?: string[]; warnings?: string[] } };
+      const validationData = e.validationData;
+      if (validationData?.errors && validationData.errors.length > 0) {
+        // Build a combined detail list: errors first, then warnings
+        const details: string[] = [...validationData.errors];
+        if (validationData.warnings && validationData.warnings.length > 0) {
+          details.push('Warnings:');
+          details.push(...validationData.warnings);
+        }
+        toast.errorWithDetails('Cannot save: invalid DAG', details, 0);
+      } else {
+        toast.error(e.message || 'Failed to save workflow');
+      }
     }
   }, [saveWorkflow, currentWorkflow]);
 
@@ -260,6 +312,29 @@ function EditorPage() {
       console.error('Execution failed:', err);
     }
   }, [showExecuteDialog, simulateWorkflow, executeWorkflow]);
+
+  const handleRun = useCallback(() => {
+    const params = currentWorkflow?.definition.inputParameters;
+    if (params && params.length > 0) {
+      if (params.some(p => p.type === 'file')) {
+        setShowRunDialog(true);
+      } else {
+        setShowExecuteDialog('execute');
+      }
+      return;
+    }
+    // No input parameters — use existing JSON-body flow
+    setShowSimulation(true);
+    executeWorkflow({}).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : 'Execution failed';
+      toast.error(message);
+    });
+  }, [currentWorkflow, executeWorkflow]);
+
+  const handleRunComplete = useCallback((_exec: Execution) => {
+    setShowSimulation(true);
+    toast.success('Workflow execution started');
+  }, []);
 
   const handleStepClick = useCallback((stepId: string) => {
     selectStep(stepId);
@@ -434,10 +509,10 @@ function EditorPage() {
             )}
           </button>
           
-          <button 
+          <button
             className="btn btn-success"
             onClick={handleSimulate}
-            disabled={isSimulating || !currentWorkflow?.definition.stations.length}
+            disabled={isSimulating || !currentWorkflow}
           >
             {isSimulating ? (
               <span className="loading-spinner" />
@@ -446,16 +521,25 @@ function EditorPage() {
             )}
             Simulate
           </button>
+
+          <button
+            className="btn btn-primary"
+            onClick={handleRun}
+            disabled={isSimulating || !currentWorkflow}
+          >
+            <Play size={18} />
+            Run
+          </button>
         </div>
       </header>
 
       {/* Main Editor Area */}
       <div className="flex" style={{ flex: 1, overflow: 'hidden' }}>
-        {/* Node Library Panel (only in Step View) */}
+        {/* Node Library Panel (only in Step View, v1 only) */}
         {showLibrary && editorView.type === 'step-view' && currentStage && (
-          <NodeLibrary 
+          <NodeLibrary
             onAddStep={(type) => handleAddStep(currentStage.id, type)}
-            stations={currentWorkflow?.definition.stations || []}
+            stations={v1Stations}
             onAddStepToStation={handleAddStep}
             onClose={() => setShowLibrary(false)}
           />
@@ -463,7 +547,16 @@ function EditorPage() {
 
         {/* Canvas Area */}
         <div style={{ flex: 1, height: '100%' }}>
-          {currentWorkflow && editorView.type === 'stage-view' && (
+          {/* v2 DAG canvas */}
+          {currentWorkflow && isV2(currentWorkflow.definition) && (
+            <>
+              <DagCanvas />
+              <EdgeConfigPanel />
+            </>
+          )}
+
+          {/* v1 Station canvas (stage view) */}
+          {currentWorkflow && !isV2(currentWorkflow.definition) && editorView.type === 'stage-view' && (
             <StageCanvas
               workflow={currentWorkflow}
               execution={currentExecution}
@@ -474,7 +567,8 @@ function EditorPage() {
             />
           )}
 
-          {currentWorkflow && editorView.type === 'step-view' && currentStage && (
+          {/* v1 Step canvas (step view) */}
+          {currentWorkflow && !isV2(currentWorkflow.definition) && editorView.type === 'step-view' && currentStage && (
             <StepCanvas
               station={currentStage}
               execution={currentExecution}
@@ -491,7 +585,7 @@ function EditorPage() {
 
         {/* Config Panel (hidden when simulation results are showing) */}
         {selectedStep && currentWorkflow && !(showSimulation && currentExecution?.result) && (
-          <NodeConfigPanel 
+          <NodeConfigPanel
             step={selectedStep}
             workflow={currentWorkflow}
             onUpdate={(data) => updateStep(selectedStep.id, data)}
@@ -501,7 +595,7 @@ function EditorPage() {
         )}
 
         {selectedStation && currentWorkflow && editorView.type === 'stage-view' && (
-          <StationConfigPanel 
+          <StationConfigPanel
             station={selectedStation}
             workflow={currentWorkflow}
             onUpdate={(data) => {
@@ -528,10 +622,8 @@ function EditorPage() {
               onChange={(params) => {
                 setCurrentWorkflow({
                   ...currentWorkflow,
-                  definition: {
-                    ...currentWorkflow.definition,
-                    inputParameters: params,
-                  },
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  definition: { ...(currentWorkflow.definition as any), inputParameters: params },
                 });
               }}
             />
@@ -563,13 +655,34 @@ function EditorPage() {
         )}
       </div>
 
-      {/* Execute Dialog (for workflows with input parameters) */}
+      {/* Execute Dialog (for workflows with non-file input parameters) */}
       {showExecuteDialog && currentWorkflow?.definition.inputParameters && (
         <ExecuteDialog
           parameters={currentWorkflow.definition.inputParameters}
           mode={showExecuteDialog}
           onSubmit={handleExecuteWithParams}
           onCancel={() => setShowExecuteDialog(null)}
+        />
+      )}
+
+      {/* Run-with-Input Dialog (for workflows with file upload parameters) */}
+      {currentWorkflow?.definition.inputParameters && (
+        <RunWithInputDialog
+          workflowId={currentWorkflow.id}
+          inputs={currentWorkflow.definition.inputParameters}
+          open={showRunDialog}
+          onClose={() => setShowRunDialog(false)}
+          onComplete={handleRunComplete}
+        />
+      )}
+
+      {/* AI Assistant Chat Panel */}
+      {currentWorkflow && (
+        <AssistantChatPanel
+          workflowId={currentWorkflow.id}
+          onWorkflowUpdated={() => {
+            if (id) fetchWorkflow(id);
+          }}
         />
       )}
     </div>
