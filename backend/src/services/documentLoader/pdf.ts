@@ -14,14 +14,7 @@ export async function loadPdf(
   // @ts-ignore — legacy build has no TS types
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
-  // Use whichever canvas implementation is installed.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let createCanvas: any;
-  try {
-    ({ createCanvas } = await import('canvas'));
-  } catch {
-    ({ createCanvas } = await import('@napi-rs/canvas'));
-  }
+  const { createCanvas } = await import('@napi-rs/canvas');
 
   const data = new Uint8Array(await fs.readFile(filePath));
   const doc = await pdfjs.getDocument({ data, disableFontFace: true, useSystemFonts: false }).promise;
