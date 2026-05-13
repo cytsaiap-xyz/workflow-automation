@@ -13,18 +13,26 @@ describe('seedPromptTemplates', () => {
     seedPromptTemplates();
   });
 
-  it('seeds the four quiz templates as builtin', async () => {
+  it('seeds the five quiz templates as builtin', async () => {
     const { PromptTemplateModel } = await import('../models/promptTemplateModel');
     const all = PromptTemplateModel.getByTag('quiz');
-    expect(all.length).toBe(4);
+    expect(all.length).toBe(5);
     expect(all.every(t => t.builtin)).toBe(true);
     expect(all.every(t => t.requiresVision)).toBe(true);
+    const names = all.map(t => t.name).sort();
+    expect(names).toEqual([
+      'quiz-doc-analyzer-system',
+      'quiz-fixer-system',
+      'quiz-generator-system',
+      'quiz-reviewer-system',
+      'quiz-verifier-system',
+    ]);
   });
 
   it('is idempotent', async () => {
     const { seedPromptTemplates } = await import('../seeds/seedPromptTemplates');
     seedPromptTemplates();
     const { PromptTemplateModel } = await import('../models/promptTemplateModel');
-    expect(PromptTemplateModel.getByTag('quiz').length).toBe(4);
+    expect(PromptTemplateModel.getByTag('quiz').length).toBe(5);
   });
 });

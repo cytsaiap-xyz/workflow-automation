@@ -21,13 +21,26 @@ describe('DAG quiz workflow E2E', () => {
       default: class {
         chat = { completions: { create: async (params: any) => {
           const sysContent = String(params.messages?.[0]?.content || '');
-          const isReviewer = /reviewer|focus-area conformance/i.test(sysContent);
-          const isVerifier = /verifier|source-grounding/i.test(sysContent);
-          const isFixer = /repair flagged quiz|fixer/i.test(sysContent);
+          const isAnalyzer = /focus-area analyst/i.test(sysContent);
+          const isReviewer = /focus-area conformance reviewer/i.test(sysContent);
+          const isVerifier = /source-grounding verifier/i.test(sysContent);
+          const isFixer = /repair flagged quiz/i.test(sysContent);
 
-          if (isReviewer || isVerifier) {
+          if (isAnalyzer) {
             return {
-              choices: [{ message: { content: '{"results":[{"question_index":0,"pass":true,"issue":null}]}' } }],
+              choices: [{ message: { content:
+                '{"refined_focus":"concept and logic","must_cover":["concepts"],"avoid":["defaults"]}'
+              } }],
+              model: 'qwen2-vl-7b',
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            };
+          }
+          if (isReviewer || isVerifier) {
+            // all_pass=true routes the workflow through the "skip fixer" branch.
+            return {
+              choices: [{ message: { content:
+                '{"results":[{"question_index":0,"pass":true,"issue":null}],"all_pass":true,"has_failures":false}'
+              } }],
               model: 'qwen2-vl-7b',
               usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
             };
@@ -84,9 +97,11 @@ describe('DAG quiz workflow E2E', () => {
     expect(stations.length).toBe(1);
     const dagStation = stations[0];
 
-    // 7 nodes in the DAG → at least 6 step results (generator may fan-out producing
-    // multiple entries, but all 7 logical nodes should appear at minimum in total count).
-    expect(dagStation.steps.length).toBeGreaterThanOrEqual(6);
+    // 8 nodes in the DAG. When verifier+reviewer both pass via the all_pass gate,
+    // the fixer node is skipped (its edge conditions resolve false), so step results
+    // typically contain at least 7 entries (analyzer, load, generator, verifier,
+    // reviewer, collect, writer; fixer may or may not appear as a 'skipped' record).
+    expect(dagStation.steps.length).toBeGreaterThanOrEqual(7);
 
     // The writer node must be the LAST step result recorded.
     const lastStep = dagStation.steps[dagStation.steps.length - 1];
@@ -100,12 +115,15 @@ describe('DAG quiz workflow E2E', () => {
     // The generated JSON file must exist on disk.
     expect(fs.existsSync(writer.output.filePath)).toBe(true);
 
-    // Fan-out: generator ran at least once per chunk (sample.txt produces ≥1 chunk).
-    // Because the generator node fan-outs, each per-chunk execution is recorded as a
-    // separate step result entry (or the node runs once per chunk sequentially).
-    // Either way the generator stepId must appear in the results.
+    // Generator runs at least once per chunk; sample.txt produces ≥1 chunk.
     const generatorSteps = dagStation.steps.filter((s: any) => s.stepId === 'generator');
     expect(generatorSteps.length).toBeGreaterThanOrEqual(1);
+
+    // analyzer must run before generator (it produces the refined focus consumed by generator).
+    const analyzerIdx = dagStation.steps.findIndex((s: any) => s.stepId === 'analyzer');
+    const generatorFirstIdx = dagStation.steps.findIndex((s: any) => s.stepId === 'generator');
+    expect(analyzerIdx).toBeGreaterThanOrEqual(0);
+    expect(analyzerIdx).toBeLessThan(generatorFirstIdx);
 
     // reviewer and verifier must appear after the generator step(s).
     const generatorLastIdx = dagStation.steps.reduce(
@@ -117,9 +135,10 @@ describe('DAG quiz workflow E2E', () => {
     expect(reviewerIdx).toBeGreaterThan(generatorLastIdx);
     expect(verifierIdx).toBeGreaterThan(generatorLastIdx);
 
-    // All expected DAG node IDs must be present in the results.
+    // Required non-conditional DAG node IDs must be present in the results.
+    // The fixer node is skipped when both gates pass, so it's not in this list.
     const stepIds = new Set(dagStation.steps.map((s: any) => s.stepId));
-    for (const nodeId of ['load', 'generator', 'reviewer', 'verifier', 'fix-loop', 'collect', 'writer']) {
+    for (const nodeId of ['load', 'analyzer', 'generator', 'reviewer', 'verifier', 'collect', 'writer']) {
       expect(stepIds.has(nodeId)).toBe(true);
     }
   });

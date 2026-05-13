@@ -13,14 +13,16 @@ describe('seedQuizWorkflow', () => {
     seedQuizWorkflow();
   });
 
-  it('seeds the quiz workflow with seven nodes (v2 DAG) and inputParameters', async () => {
+  it('seeds the quiz workflow with eight nodes (v2 DAG) and inputParameters', async () => {
     const { WorkflowModel } = await import('../models/workflow');
     const wf = WorkflowModel.getById('builtin-quiz-generator');
     expect(wf).toBeTruthy();
-    // The DAG seeder produces a 7-node v2 workflow (load, generator, reviewer, verifier,
-    // fix-loop, collect, writer) with named-port edges into fix-loop.
+    // The DAG seeder produces an 8-node v2 workflow:
+    // load → analyzer → generator → (verifier, reviewer) → fixer → collect → writer
+    // with if-else edges (when: ${parsed.all_pass} / ${parsed.has_failures}) routing
+    // verifier and reviewer results to either fixer or collect.
     expect((wf!.definition as any).schemaVersion).toBe(2);
-    expect((wf!.definition as any).nodes.length).toBe(7);
+    expect((wf!.definition as any).nodes.length).toBe(8);
     expect((wf!.definition as any).inputParameters?.find((p: any) => p.name === 'file')?.type).toBe('file');
   });
 

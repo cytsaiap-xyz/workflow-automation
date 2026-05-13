@@ -23,13 +23,26 @@ describe('Quiz workflow E2E', () => {
       default: class {
         chat = { completions: { create: async (params: any) => {
           const sysContent = String(params.messages?.[0]?.content || '');
+          const isAnalyzer = /focus-area analyst/.test(sysContent);
           const isReviewer = /focus-area conformance reviewer/.test(sysContent);
           const isVerifier = /source-grounding verifier/.test(sysContent);
           const isFixer = /repair flagged quiz/.test(sysContent);
 
-          if (isReviewer || isVerifier) {
+          if (isAnalyzer) {
             return {
-              choices: [{ message: { content: '{"results":[{"question_index":0,"pass":true,"issue":null}]}' } }],
+              choices: [{ message: { content:
+                '{"refined_focus":"concept and logic","must_cover":["concepts"],"avoid":["defaults"]}'
+              } }],
+              model: 'qwen2-vl-7b',
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            };
+          }
+          if (isReviewer || isVerifier) {
+            // all_pass=true routes the workflow through the "skip fixer" branch.
+            return {
+              choices: [{ message: { content:
+                '{"results":[{"question_index":0,"pass":true,"issue":null}],"all_pass":true,"has_failures":false}'
+              } }],
               model: 'qwen2-vl-7b',
               usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
             };
@@ -84,7 +97,8 @@ describe('Quiz workflow E2E', () => {
     // The v2 DAG engine produces one synthetic station containing all node step results.
     const stations = res.body.data.result.stations;
     expect(stations.length).toBe(1);
-    // The 7-node DAG (load, generator, reviewer, verifier, fix-loop, collect, writer).
+    // The 8-node DAG (load, analyzer, generator, verifier, reviewer, fixer, collect, writer).
+    // When verifier+reviewer both pass, the fixer node is skipped via edge when-conditions.
     // Find the writer step by its node id (stepId field in v2 DAG results).
     const writerStep = stations[0].steps.find((s: any) => s.stepId === 'writer');
     expect(writerStep).toBeTruthy();
