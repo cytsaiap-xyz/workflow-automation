@@ -264,25 +264,36 @@ export default function UserManualPage() {
   // CSS that scopes scroll behavior + heading offset to this page only.
   // Mounted inline so it ships with the component and doesn't pollute global CSS.
   const styles = `
-    .help-page { scroll-behavior: smooth; }
+    .help-page { scroll-behavior: smooth; color: var(--text-primary); }
     .help-page section { scroll-margin-top: 24px; }
+    .help-page code,
+    .help-page pre {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: 'SF Mono', Monaco, Consolas, monospace;
+    }
+    .help-page pre {
+      padding: 12px;
+    }
     .help-toc a {
       display: block;
       padding: 4px 10px;
       border-left: 3px solid transparent;
-      color: var(--color-text-muted, #666);
+      color: var(--text-muted);
       text-decoration: none;
       font-size: 0.9em;
       transition: all 0.15s ease;
     }
     .help-toc a:hover {
-      color: var(--color-primary, #2563eb);
-      background: var(--color-surface-2, #f5f5f5);
+      color: var(--accent-primary);
+      background: var(--bg-tertiary);
     }
     .help-toc a.active {
-      color: var(--color-primary, #2563eb);
-      border-left-color: var(--color-primary, #2563eb);
-      background: var(--color-surface-2, #f5f5f5);
+      color: var(--accent-primary);
+      border-left-color: var(--accent-primary);
+      background: var(--bg-tertiary);
       font-weight: 600;
     }
     .help-layout {
@@ -316,7 +327,7 @@ export default function UserManualPage() {
         <BookOpen size={28} />
         <div>
           <h1 style={{ margin: 0 }}>User Manual</h1>
-          <p style={{ margin: '4px 0 0', color: 'var(--color-text-muted, #666)' }}>
+          <p style={{ margin: '4px 0 0', color: 'var(--text-muted)' }}>
             Every node type, what it does, and how it runs.
           </p>
         </div>
@@ -348,7 +359,7 @@ export default function UserManualPage() {
             <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 20 }}>
               {ALL_SECTION_IDS.map((s) => (
                 <li key={s.id}>
-                  <a href={`#${s.id}`} style={{ color: 'var(--color-primary, #2563eb)' }}>
+                  <a href={`#${s.id}`} style={{ color: 'var(--accent-primary)' }}>
                     {s.title}
                   </a>
                 </li>
@@ -358,11 +369,11 @@ export default function UserManualPage() {
 
       {SECTIONS.map((s) => (
         <section key={s.id} id={s.id} style={{ marginBottom: 32 }}>
-          <h2 style={{ borderBottom: '1px solid var(--color-border, #e0e0e0)', paddingBottom: 6 }}>
+          <h2 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: 6 }}>
             {s.title}
           </h2>
           {s.intro && (
-            <p style={{ color: 'var(--color-text-muted, #666)' }}>{s.intro}</p>
+            <p style={{ color: 'var(--text-muted)' }}>{s.intro}</p>
           )}
           <div style={{ display: 'grid', gap: 12 }}>
             {s.rows.map((row) => (
@@ -371,7 +382,8 @@ export default function UserManualPage() {
                   style={{
                     fontWeight: 600,
                     fontSize: '1em',
-                    background: 'var(--color-surface-2, #f5f5f5)',
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)',
                     padding: '2px 8px',
                     borderRadius: 4,
                   }}
@@ -381,12 +393,12 @@ export default function UserManualPage() {
                 <p style={{ marginTop: 8, marginBottom: 6 }}>{row.what}</p>
                 {row.config && (
                   <p style={{ margin: '4px 0', fontSize: '0.9em' }}>
-                    <strong style={{ color: 'var(--color-text-muted, #666)' }}>Config:</strong>{' '}
+                    <strong style={{ color: 'var(--text-muted)' }}>Config:</strong>{' '}
                     <code>{row.config}</code>
                   </p>
                 )}
                 <p style={{ margin: '4px 0 0', fontSize: '0.9em' }}>
-                  <strong style={{ color: 'var(--color-text-muted, #666)' }}>How it runs:</strong>{' '}
+                  <strong style={{ color: 'var(--text-muted)' }}>How it runs:</strong>{' '}
                   {row.runs}
                 </p>
               </article>
@@ -396,7 +408,7 @@ export default function UserManualPage() {
       ))}
 
       <section id="variables" style={{ marginBottom: 32 }}>
-        <h2 style={{ borderBottom: '1px solid var(--color-border, #e0e0e0)', paddingBottom: 6 }}>
+        <h2 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: 6 }}>
           Variable reference syntax
         </h2>
         <p>
@@ -409,9 +421,11 @@ export default function UserManualPage() {
           className="card"
           style={{
             padding: 12,
-            background: 'var(--color-surface-2, #f5f5f5)',
+            background: 'var(--bg-tertiary)',
+            color: 'var(--text-primary)',
             overflowX: 'auto',
             fontSize: '0.9em',
+            fontFamily: 'monospace',
           }}
         >
           {VARIABLE_REFERENCE_EXAMPLES}
@@ -419,10 +433,10 @@ export default function UserManualPage() {
       </section>
 
       <section id="dag" style={{ marginBottom: 32 }}>
-        <h2 style={{ borderBottom: '1px solid var(--color-border, #e0e0e0)', paddingBottom: 6 }}>
+        <h2 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: 6 }}>
           DAG engine features (v2 workflows)
         </h2>
-        <p style={{ color: 'var(--color-text-muted, #666)' }}>
+        <p style={{ color: 'var(--text-muted)' }}>
           On top of per-node behavior, the v2 DAG executor adds these capabilities. They apply uniformly to
           any of the step types above.
         </p>
@@ -440,8 +454,8 @@ export default function UserManualPage() {
             style={{
               marginTop: 40,
               padding: 16,
-              borderTop: '1px solid var(--color-border, #e0e0e0)',
-              color: 'var(--color-text-muted, #666)',
+              borderTop: '1px solid var(--border-color)',
+              color: 'var(--text-muted)',
               fontSize: '0.9em',
             }}
           >
