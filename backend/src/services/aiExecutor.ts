@@ -29,6 +29,64 @@ interface ResolvedProvider {
   apiKey?: string;
   headers?: Record<string, string>;
   supportsVision: boolean;
+  /** human label for debug logs — provider entity name, "inline", or "default" */
+  source?: string;
+}
+
+/**
+ * Structured pre-call log: which provider + model + image flag we're about
+ * to hit. Never logs the API key.
+ */
+function logAiCallBefore(
+  label: string,
+  provider: ResolvedProvider,
+  config: StepConfig,
+  hasImage: boolean,
+  messageCount: number,
+): void {
+  log.info({
+    aiCall: 'before',
+    label,
+    providerSource: provider.source ?? 'unknown',
+    baseUrl: provider.baseUrl,
+    model: provider.model,
+    supportsVision: provider.supportsVision,
+    hasImage,
+    messageCount,
+    hasSchema: !!config.aiOutputSchema,
+    temperature: config.aiTemperature,
+    maxTokens: config.aiMaxTokens,
+  }, `[ai] ${label} → ${provider.model} @ ${provider.baseUrl}`);
+}
+
+/**
+ * Structured failure log: tries to extract everything useful from OpenAI
+ * SDK error objects without leaking the API key.
+ */
+function logAiCallError(label: string, provider: ResolvedProvider | null, error: any): void {
+  const details: Record<string, unknown> = {
+    aiCall: 'error',
+    label,
+    providerSource: provider?.source ?? 'none',
+    baseUrl: provider?.baseUrl,
+    model: provider?.model,
+    errorMessage: error?.message,
+    errorName: error?.name,
+  };
+  // OpenAI SDK APIError fields
+  if (error?.status) details.httpStatus = error.status;
+  if (error?.code) details.errorCode = error.code;
+  if (error?.type) details.errorType = error.type;
+  if (error?.error) details.errorBody = error.error;
+  if (error?.headers?.['x-request-id']) details.requestId = error.headers['x-request-id'];
+  // Some SDK versions attach a raw response
+  if (error?.response?.status) details.responseStatus = error.response.status;
+  if (error?.response?.data && typeof error.response.data === 'object') {
+    details.responseBody = error.response.data;
+  }
+  // Stack last so it doesn't dominate the printed object
+  if (error?.stack) details.stack = String(error.stack).split('\n').slice(0, 5).join('\n');
+  log.error(details, `[ai] ${label} failed: ${error?.message ?? 'unknown error'}`);
 }
 
 interface ResolvedPrompts {
@@ -53,6 +111,7 @@ function resolveProvider(config: StepConfig): ResolvedProvider | null {
         apiKey: p.apiKey,
         headers: p.headers,
         supportsVision: p.supportsVision,
+        source: `entity:${p.name}`,
       };
     }
   }
@@ -65,6 +124,7 @@ function resolveProvider(config: StepConfig): ResolvedProvider | null {
       apiKey: config.aiApiKey,
       headers: config.aiHeaders,
       supportsVision: false,
+      source: 'inline',
     };
   }
 
@@ -77,6 +137,7 @@ function resolveProvider(config: StepConfig): ResolvedProvider | null {
       apiKey: def.apiKey,
       headers: def.headers,
       supportsVision: def.supportsVision,
+      source: `default:${def.name}`,
     };
   }
 
@@ -175,6 +236,7 @@ export class AiExecutor {
       messages.push({ role: 'user', content: userMsgContent as any });
 
       logs.push(`Sending prompt to ${provider.baseUrl} (model: ${provider.model})`);
+      logAiCallBefore('prompt', provider, config, !!pickImagePath(inputContext), messages.length);
 
       const completion = await client.chat.completions.create({
         model: provider.model,
@@ -211,7 +273,7 @@ export class AiExecutor {
         logs,
       };
     } catch (error: any) {
-      log.error(`AI Prompt failed: ${error.message}`);
+      logAiCallError('prompt', resolveProvider(config), error);
       return {
         success: false,
         error: `AI Prompt failed: ${error.message}`,
@@ -272,6 +334,7 @@ export class AiExecutor {
         params.response_format = { type: 'json_object' };
       }
 
+      logAiCallBefore('structured-output', provider, config, !!pickImagePath(inputContext), messages.length);
       const completion = await client.chat.completions.create(params);
       const raw = stripThoughtTags(completion.choices[0]?.message?.content || '{}');
       const usage = completion.usage;
@@ -302,7 +365,7 @@ export class AiExecutor {
         logs,
       };
     } catch (error: any) {
-      log.error(`AI Structured Output failed: ${error.message}`);
+      logAiCallError('structured-output', resolveProvider(config), error);
       return {
         success: false,
         error: `AI Structured Output failed: ${error.message}`,
@@ -449,7 +512,7 @@ export class AiExecutor {
         logs,
       };
     } catch (error: any) {
-      log.error(`AI Agent failed: ${error.message}`);
+      logAiCallError('agent', resolveProvider(config), error);
       return {
         success: false,
         error: `AI Agent failed: ${error.message}`,
@@ -544,7 +607,7 @@ export class AiExecutor {
         logs,
       };
     } catch (error: any) {
-      log.error(`AI Router failed: ${error.message}`);
+      logAiCallError('router', resolveProvider(config), error);
       return {
         success: false,
         error: `AI Router failed: ${error.message}`,
