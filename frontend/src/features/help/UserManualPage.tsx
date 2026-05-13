@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { BookOpen } from 'lucide-react';
 
 interface NodeRow {
@@ -224,9 +225,93 @@ const DAG_FEATURES = [
   },
 ];
 
+// All section ids (in document order) used by the IntersectionObserver
+// active-section highlight and by the sticky table-of-contents.
+const ALL_SECTION_IDS = [
+  ...SECTIONS.map((s) => ({ id: s.id, title: s.title })),
+  { id: 'variables', title: 'Variable reference syntax' },
+  { id: 'dag', title: 'DAG engine features (v2 workflows)' },
+];
+
+function useActiveSection(): string {
+  const [activeId, setActiveId] = useState<string>(ALL_SECTION_IDS[0]?.id || '');
+
+  useEffect(() => {
+    // Track which sections are currently in the viewport; pick the one
+    // whose top is closest to the top of the page.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]?.target.id) setActiveId(visible[0].target.id);
+      },
+      { rootMargin: '-80px 0px -60% 0px', threshold: 0 },
+    );
+    for (const { id } of ALL_SECTION_IDS) {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  return activeId;
+}
+
 export default function UserManualPage() {
+  const activeId = useActiveSection();
+
+  // CSS that scopes scroll behavior + heading offset to this page only.
+  // Mounted inline so it ships with the component and doesn't pollute global CSS.
+  const styles = `
+    .help-page { scroll-behavior: smooth; }
+    .help-page section { scroll-margin-top: 24px; }
+    .help-toc a {
+      display: block;
+      padding: 4px 10px;
+      border-left: 3px solid transparent;
+      color: var(--color-text-muted, #666);
+      text-decoration: none;
+      font-size: 0.9em;
+      transition: all 0.15s ease;
+    }
+    .help-toc a:hover {
+      color: var(--color-primary, #2563eb);
+      background: var(--color-surface-2, #f5f5f5);
+    }
+    .help-toc a.active {
+      color: var(--color-primary, #2563eb);
+      border-left-color: var(--color-primary, #2563eb);
+      background: var(--color-surface-2, #f5f5f5);
+      font-weight: 600;
+    }
+    .help-layout {
+      display: block;
+    }
+    @media (min-width: 1024px) {
+      .help-layout {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        gap: 32px;
+        align-items: start;
+      }
+      .help-toc-wrapper {
+        position: sticky;
+        top: 16px;
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
+      }
+      .help-toc-mobile { display: none; }
+    }
+    @media (max-width: 1023px) {
+      .help-toc-wrapper { display: none; }
+    }
+  `;
+
   return (
-    <div style={{ padding: '24px', maxWidth: 1100, margin: '0 auto' }}>
+    <div className="help-page" style={{ padding: '24px', maxWidth: 1280, margin: '0 auto' }}>
+      <style>{styles}</style>
+
       <header style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
         <BookOpen size={28} />
         <div>
@@ -237,28 +322,39 @@ export default function UserManualPage() {
         </div>
       </header>
 
-      <nav className="card" style={{ padding: 16, marginBottom: 24 }}>
-        <strong>Contents</strong>
-        <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 20 }}>
-          {SECTIONS.map((s) => (
-            <li key={s.id}>
-              <a href={`#${s.id}`} style={{ color: 'var(--color-primary, #2563eb)' }}>
+      <div className="help-layout">
+        {/* Sticky TOC — shown on screens ≥ 1024px */}
+        <aside className="help-toc-wrapper">
+          <nav className="card help-toc" style={{ padding: 12 }}>
+            <strong style={{ display: 'block', padding: '0 10px 8px', fontSize: '0.85em', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Contents
+            </strong>
+            {ALL_SECTION_IDS.map((s) => (
+              <a
+                key={s.id}
+                href={`#${s.id}`}
+                className={activeId === s.id ? 'active' : ''}
+              >
                 {s.title}
               </a>
-            </li>
-          ))}
-          <li>
-            <a href="#variables" style={{ color: 'var(--color-primary, #2563eb)' }}>
-              Variable reference syntax
-            </a>
-          </li>
-          <li>
-            <a href="#dag" style={{ color: 'var(--color-primary, #2563eb)' }}>
-              DAG engine features (v2 workflows)
-            </a>
-          </li>
-        </ul>
-      </nav>
+            ))}
+          </nav>
+        </aside>
+
+        <div>
+          {/* Inline TOC for mobile / narrow screens */}
+          <nav className="card help-toc-mobile" style={{ padding: 16, marginBottom: 24 }}>
+            <strong>Contents</strong>
+            <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 20 }}>
+              {ALL_SECTION_IDS.map((s) => (
+                <li key={s.id}>
+                  <a href={`#${s.id}`} style={{ color: 'var(--color-primary, #2563eb)' }}>
+                    {s.title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
 
       {SECTIONS.map((s) => (
         <section key={s.id} id={s.id} style={{ marginBottom: 32 }}>
@@ -340,18 +436,20 @@ export default function UserManualPage() {
         </div>
       </section>
 
-      <footer
-        style={{
-          marginTop: 40,
-          padding: 16,
-          borderTop: '1px solid var(--color-border, #e0e0e0)',
-          color: 'var(--color-text-muted, #666)',
-          fontSize: '0.9em',
-        }}
-      >
-        Source of truth for behavior: <code>backend/src/services/stepExecutor.ts</code>{' '}
-        (per-node case bodies) and <code>backend/src/services/dagScheduler.ts</code> (DAG features).
-      </footer>
+          <footer
+            style={{
+              marginTop: 40,
+              padding: 16,
+              borderTop: '1px solid var(--color-border, #e0e0e0)',
+              color: 'var(--color-text-muted, #666)',
+              fontSize: '0.9em',
+            }}
+          >
+            Source of truth for behavior: <code>backend/src/services/stepExecutor.ts</code>{' '}
+            (per-node case bodies) and <code>backend/src/services/dagScheduler.ts</code> (DAG features).
+          </footer>
+        </div>
+      </div>
     </div>
   );
 }
