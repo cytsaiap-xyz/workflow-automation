@@ -150,13 +150,25 @@ variables.allQuestions = all;
 return { questions: all, count: all.length };
 `;
 
+// Pixel spacing for the seeded layout. ReactFlow nodes are roughly 150-200 px
+// wide, so we use a column step of 260 px and a row step of 140 px.
+const COL = 260;
+const ROW = 140;
+const X0 = 60;
+const Y0 = 100;
+const pos = (col: number, row: number) => ({ x: X0 + col * COL, y: Y0 + row * ROW });
+
 export function seedQuizWorkflowDag(): void {
   const existing = WorkflowModel.getById(QUIZ_WORKFLOW_ID);
-  // Skip ONLY if already in the new DAG shape with identifying nodes (idempotent).
+  // Skip if already seeded with valid (non-overlapping) positions. Older seeds
+  // wrote tiny grid coords like {x:0,y:0}..{x:5,y:0} which ReactFlow rendered
+  // as overlapping pixels; if we detect that, re-seed to fix the layout.
   if (existing) {
     const def: any = existing.definition;
-    if (def?.schemaVersion === 2 && Array.isArray(def?.nodes) && def.nodes.some((n: any) => n.id === 'generator')) {
-      return;
+    const hasV2Nodes = def?.schemaVersion === 2 && Array.isArray(def?.nodes) && def.nodes.some((n: any) => n.id === 'generator');
+    if (hasV2Nodes) {
+      const broken = def.nodes.every((n: any) => Math.abs(n.position?.x ?? 0) < 50 && Math.abs(n.position?.y ?? 0) < 50);
+      if (!broken) return;
     }
   }
 
@@ -172,7 +184,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'load',
         name: 'Load document',
         type: 'load-document',
-        position: { x: 0, y: 0 },
+        position: pos(0, 0),
         config: {
           loadDocumentSourcePath: '${input.file}',
           loadDocumentMaxChunkChars: 2000,
@@ -182,7 +194,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'generator',
         name: 'Generate questions',
         type: 'ai-structured-output',
-        position: { x: 1, y: 0 },
+        position: pos(1, 0),
         config: {
           aiSystemPrompt: 'Use the quiz-generator-system template via inputs.',
           aiPrompt: '${chunks}',
@@ -194,7 +206,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'reviewer',
         name: 'Review focus-area',
         type: 'ai-structured-output',
-        position: { x: 2, y: 0 },
+        position: pos(2, 0),
         config: {
           aiSystemPrompt: 'Reviewer.',
           aiPrompt: '${generator.questions}',
@@ -205,7 +217,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'verifier',
         name: 'Verify grounding',
         type: 'ai-structured-output',
-        position: { x: 2, y: 1 },
+        position: pos(2, 1),
         config: {
           aiSystemPrompt: 'Verifier.',
           aiPrompt: '${generator.questions}',
@@ -216,7 +228,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'fix-loop',
         name: 'Fix flagged + retry',
         type: 'script-js',
-        position: { x: 3, y: 0 },
+        position: pos(3, 0),
         config: { code: FIX_LOOP_CODE },
         // inputVars expose the generator/reviewer/verifier outputs as inputData fields.
         // After each node runs, runV2 sets variables[node.id] = { output: r.output }.
@@ -230,7 +242,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'collect',
         name: 'Collect questions',
         type: 'script-js',
-        position: { x: 4, y: 0 },
+        position: pos(4, 0),
         config: {
           // fix-loop sets variables.allQuestions; collect reads from there directly.
           code: "const qs = variables.allQuestions || []; return { questions: qs };",
@@ -240,7 +252,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'writer',
         name: 'Write quiz JSON',
         type: 'quiz-output-writer',
-        position: { x: 5, y: 0 },
+        position: pos(5, 0),
         config: { quizOutputFilename: 'quiz.json' },
         inputVars: [
           { name: 'questions', source: '${allQuestions}' },
