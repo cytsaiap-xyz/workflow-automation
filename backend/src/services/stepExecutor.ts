@@ -303,6 +303,24 @@ export class StepExecutor {
         }
       }
 
+      case 'transform': {
+        const { transform } = await import('./transformer');
+        try {
+          const mapping = step.config.transformMapping || {};
+          const out = transform(
+            { ...context.variables, inputData: resolvedInput },
+            { mapping },
+          );
+          return {
+            success: true,
+            output: out,
+            logs: [`transform produced ${Object.keys(out).length} field(s)`],
+          };
+        } catch (e: any) {
+          return { success: false, error: `transform failed: ${e.message}`, logs: [] };
+        }
+      }
+
       case 'aggregate': {
         const { aggregate } = await import('./aggregator');
         try {

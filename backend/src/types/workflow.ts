@@ -94,7 +94,8 @@ export type StepType =
   | 'load-document'
   | 'quiz-output-writer'
   | 'json-output-writer'
-  | 'aggregate';
+  | 'aggregate'
+  | 'transform';
 
 export interface StepConfig {
   // Script nodes
@@ -180,6 +181,11 @@ export interface StepConfig {
   aggregateOperation?: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'flatten' | 'group-by' | 'pick' | 'concat';
   aggregateField?: string;      // dot-path into each item, required for sum/avg/min/max/group-by/pick
   aggregateSeparator?: string;  // used by concat (default '')
+
+  // transform step — declarative JSON shaper. Each output key maps to a
+  // `${path}`-interpolated source expression, resolved against the same
+  // context inputVars uses.
+  transformMapping?: Record<string, string>;
 }
 
 export interface VariableMapping {

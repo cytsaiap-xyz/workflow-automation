@@ -85,6 +85,12 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
   const [aggregateField, setAggregateField] = useState(step.config.aggregateField || '');
   const [aggregateSeparator, setAggregateSeparator] = useState(step.config.aggregateSeparator || '');
 
+  // transform field — edited as JSON text so the user can keep multi-key mappings readable
+  const [transformMappingJson, setTransformMappingJson] = useState(
+    step.config.transformMapping ? JSON.stringify(step.config.transformMapping, null, 2) : '{\n  \n}',
+  );
+  const [transformMappingError, setTransformMappingError] = useState<string | null>(null);
+
   // Picker state
   const [activePicker, setActivePicker] = useState<string | null>(null);
 
@@ -155,6 +161,10 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
     setAggregateOperation(step.config.aggregateOperation || 'count');
     setAggregateField(step.config.aggregateField || '');
     setAggregateSeparator(step.config.aggregateSeparator || '');
+    setTransformMappingJson(
+      step.config.transformMapping ? JSON.stringify(step.config.transformMapping, null, 2) : '{\n  \n}',
+    );
+    setTransformMappingError(null);
   }, [step]);
 
   const handleSave = () => {
@@ -261,6 +271,19 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         config.aggregateOperation = aggregateOperation;
         config.aggregateField = aggregateField.trim() || undefined;
         config.aggregateSeparator = aggregateSeparator || undefined;
+        break;
+      case 'transform':
+        try {
+          const parsed = JSON.parse(transformMappingJson);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            // Force all values to strings — mapping values must be interpolation expressions
+            const clean: Record<string, string> = {};
+            for (const [k, v] of Object.entries(parsed)) clean[k] = String(v);
+            config.transformMapping = clean;
+          }
+        } catch {
+          // Leave previous mapping in place; render() shows the parse error
+        }
         break;
     }
 
@@ -1213,6 +1236,45 @@ print(json.dumps({'result': result}))`}
                 {step.type === 'ai-agent' && <>&nbsp;&nbsp;toolCalls: array,<br/>&nbsp;&nbsp;iterations: number,<br/></>}
                 {'}'}
               </div>
+            </div>
+          </>
+        );
+
+      case 'transform':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Output mapping (JSON)</label>
+              <textarea
+                className="form-textarea"
+                value={transformMappingJson}
+                onChange={(e) => {
+                  setTransformMappingJson(e.target.value);
+                  try {
+                    const parsed = JSON.parse(e.target.value);
+                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                      setTransformMappingError('Must be a JSON object');
+                    } else {
+                      setTransformMappingError(null);
+                    }
+                  } catch (err) {
+                    setTransformMappingError((err as Error).message);
+                  }
+                }}
+                placeholder={'{\n  "questions": "${inputData.generator.parsed.questions}",\n  "count": "${inputData.generator.parsed.questions.length}"\n}'}
+                style={{ minHeight: '160px', fontFamily: 'monospace' }}
+              />
+              {transformMappingError && (
+                <p className="text-xs" style={{ color: 'var(--accent-danger)' }}>{transformMappingError}</p>
+              )}
+              <p className="text-xs text-muted mt-1">
+                Each value is interpolated against the same context as <code>inputVars</code>:{' '}
+                <code>{'${inputData.x}'}</code>, <code>{'${nodeId.output.path}'}</code>,{' '}
+                <code>{'${input.fieldName}'}</code>. Result is JSON-parsed when possible so objects/arrays come through as-is.
+              </p>
+            </div>
+            <div className="text-xs text-muted">
+              <strong>Output:</strong> the mapped object — each key becomes a top-level field on this node's output.
             </div>
           </>
         );

@@ -35,7 +35,7 @@ const NODE_CATEGORIES = {
   },
   data: {
     label: '📦 Data & Files',
-    types: ['load-document', 'aggregate', 'json-output-writer', 'quiz-output-writer'] as StepType[],
+    types: ['load-document', 'transform', 'aggregate', 'json-output-writer', 'quiz-output-writer'] as StepType[],
   },
 };
 

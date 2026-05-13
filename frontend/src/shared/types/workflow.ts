@@ -148,7 +148,8 @@ export type StepType =
   | 'load-document'
   | 'quiz-output-writer'
   | 'json-output-writer'
-  | 'aggregate';
+  | 'aggregate'
+  | 'transform';
 
 export interface StepConfig {
   code?: string;
@@ -209,6 +210,8 @@ export interface StepConfig {
   aggregateOperation?: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'flatten' | 'group-by' | 'pick' | 'concat';
   aggregateField?: string;
   aggregateSeparator?: string;
+  // transform
+  transformMapping?: Record<string, string>;
 }
 
 export interface VariableMapping {
@@ -338,4 +341,5 @@ export const STEP_TYPE_INFO: Record<StepType, { label: string; icon: string; col
   'quiz-output-writer': { label: 'Quiz Output Writer', icon: '📝', color: '#10b981' },
   'json-output-writer': { label: 'JSON Output Writer', icon: '💾', color: '#10b981' },
   'aggregate': { label: 'Aggregate', icon: '📊', color: '#0891b2' },
+  'transform': { label: 'Transform', icon: '🔄', color: '#0891b2' },
 };
