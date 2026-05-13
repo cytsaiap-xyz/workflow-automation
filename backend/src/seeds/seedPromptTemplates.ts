@@ -8,6 +8,7 @@
  */
 import { PromptTemplateModel } from '../models/promptTemplateModel';
 import {
+  QUIZ_DOC_ANALYZER_SYSTEM,
   QUIZ_GENERATOR_SYSTEM,
   QUIZ_REVIEWER_SYSTEM,
   QUIZ_VERIFIER_SYSTEM,
@@ -16,6 +17,7 @@ import {
 
 export function seedPromptTemplates(): void {
   const seeds = [
+    { name: 'quiz-doc-analyzer-system', role: 'system' as const, content: QUIZ_DOC_ANALYZER_SYSTEM, requiresVision: true, tags: ['quiz', 'analyzer'], builtin: true },
     { name: 'quiz-generator-system', role: 'system' as const, content: QUIZ_GENERATOR_SYSTEM, requiresVision: true, tags: ['quiz', 'generator'], builtin: true },
     { name: 'quiz-reviewer-system', role: 'system' as const, content: QUIZ_REVIEWER_SYSTEM, requiresVision: true, tags: ['quiz', 'reviewer'], builtin: true },
     { name: 'quiz-verifier-system', role: 'system' as const, content: QUIZ_VERIFIER_SYSTEM, requiresVision: true, tags: ['quiz', 'verifier'], builtin: true },
