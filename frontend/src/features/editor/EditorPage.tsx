@@ -441,7 +441,7 @@ function EditorPage() {
             color: 'var(--text-secondary)',
           }}>
             <Layers size={14} />
-            {editorView.type === 'stage-view' ? 'Stage View' : 'Step View'}
+            {isV2Workflow ? 'DAG View' : editorView.type === 'stage-view' ? 'Stage View' : 'Step View'}
           </div>
 
           {editorView.type === 'step-view' && (

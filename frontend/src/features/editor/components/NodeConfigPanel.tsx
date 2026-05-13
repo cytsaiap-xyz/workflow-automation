@@ -79,6 +79,14 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
   const [jsonOutputRootKey, setJsonOutputRootKey] = useState(step.config.jsonOutputRootKey || '');
   const [jsonOutputPretty, setJsonOutputPretty] = useState(step.config.jsonOutputPretty !== false);
 
+  // load-document fields
+  const [loadDocumentSourcePath, setLoadDocumentSourcePath] = useState(step.config.loadDocumentSourcePath || '');
+  const [loadDocumentMaxChunkChars, setLoadDocumentMaxChunkChars] = useState(step.config.loadDocumentMaxChunkChars ?? 2000);
+
+  // quiz-output-writer fields
+  const [quizOutputFilename, setQuizOutputFilename] = useState(step.config.quizOutputFilename || '');
+  const [quizOutputDirectory, setQuizOutputDirectory] = useState(step.config.quizOutputDirectory || '');
+
   // aggregate fields
   const [aggregateInputPath, setAggregateInputPath] = useState(step.config.aggregateInputPath || 'items');
   const [aggregateOperation, setAggregateOperation] = useState(step.config.aggregateOperation || 'count');
@@ -168,6 +176,10 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
     setJsonOutputDirectory(step.config.jsonOutputDirectory || '');
     setJsonOutputRootKey(step.config.jsonOutputRootKey || '');
     setJsonOutputPretty(step.config.jsonOutputPretty !== false);
+    setLoadDocumentSourcePath(step.config.loadDocumentSourcePath || '');
+    setLoadDocumentMaxChunkChars(step.config.loadDocumentMaxChunkChars ?? 2000);
+    setQuizOutputFilename(step.config.quizOutputFilename || '');
+    setQuizOutputDirectory(step.config.quizOutputDirectory || '');
     setAggregateInputPath(step.config.aggregateInputPath || 'items');
     setAggregateOperation(step.config.aggregateOperation || 'count');
     setAggregateField(step.config.aggregateField || '');
@@ -285,6 +297,14 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         config.jsonOutputDirectory = jsonOutputDirectory.trim() || undefined;
         config.jsonOutputRootKey = jsonOutputRootKey.trim() || undefined;
         config.jsonOutputPretty = jsonOutputPretty;
+        break;
+      case 'load-document':
+        config.loadDocumentSourcePath = loadDocumentSourcePath.trim() || undefined;
+        config.loadDocumentMaxChunkChars = Number(loadDocumentMaxChunkChars) || undefined;
+        break;
+      case 'quiz-output-writer':
+        config.quizOutputFilename = quizOutputFilename.trim() || undefined;
+        config.quizOutputDirectory = quizOutputDirectory.trim() || undefined;
         break;
       case 'aggregate':
         config.aggregateInputPath = aggregateInputPath.trim() || undefined;
@@ -1457,6 +1477,74 @@ print(json.dumps({'result': result}))`}
           </>
         );
       }
+
+      case 'load-document':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Source path</label>
+              <input
+                type="text"
+                className="form-input"
+                value={loadDocumentSourcePath}
+                onChange={(e) => setLoadDocumentSourcePath(e.target.value)}
+                placeholder="${input.file}"
+              />
+              <p className="text-xs text-muted mt-1">
+                Path to a PDF / PPTX / TXT file. Supports <code>{'${input.file}'}</code> interpolation when the workflow has a file input parameter.
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Max chunk chars</label>
+              <input
+                type="number"
+                className="form-input"
+                value={loadDocumentMaxChunkChars}
+                onChange={(e) => setLoadDocumentMaxChunkChars(Number(e.target.value))}
+                min={0}
+                placeholder="2000"
+              />
+              <p className="text-xs text-muted mt-1">
+                Soft upper bound on per-chunk text length. <code>0</code> disables splitting.
+              </p>
+            </div>
+            <div className="text-xs text-muted">
+              <strong>Output:</strong> {'{ chunks: [{ pageId, text, imagePath }], count }'}
+            </div>
+          </>
+        );
+
+      case 'quiz-output-writer':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Filename</label>
+              <input
+                type="text"
+                className="form-input"
+                value={quizOutputFilename}
+                onChange={(e) => setQuizOutputFilename(e.target.value)}
+                placeholder="quiz.json"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Directory (optional)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={quizOutputDirectory}
+                onChange={(e) => setQuizOutputDirectory(e.target.value)}
+                placeholder="(default: per-execution uploads dir)"
+              />
+            </div>
+            <p className="text-xs text-muted">
+              Expects inputVars <code>questions</code>, <code>sourceFile</code>, <code>focusArea</code>. For general JSON output prefer the <code>json-output-writer</code> node.
+            </p>
+            <div className="text-xs text-muted mt-2">
+              <strong>Output:</strong> {'{ filePath, json }'}
+            </div>
+          </>
+        );
 
       case 'json-output-writer':
         return (
