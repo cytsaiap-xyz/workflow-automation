@@ -10,6 +10,8 @@ import { VariablePicker } from './VariablePicker';
 import { PromptHelperPopover } from '../../assistant/PromptHelperPopover';
 import { NodeAdvancedSection } from '../dag/NodeAdvancedSection';
 import { useDagEditorStore } from '../../../shared/stores/dagEditorStore';
+import { aiProvidersApi } from '../../../shared/api/aiProvidersApi';
+import type { AiProvider } from '../../../shared/api/aiProvidersApi';
 
 interface NodeConfigPanelProps {
   step: Step;
@@ -56,6 +58,8 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
   const [dbQuery, setDbQuery] = useState(step.config.dbQuery || '');
 
   // AI fields
+  const [aiProviderId, setAiProviderId] = useState(step.config.aiProviderId || '');
+  const [aiProviders, setAiProviders] = useState<AiProvider[]>([]);
   const [aiBaseUrl, setAiBaseUrl] = useState(step.config.aiBaseUrl || '');
   const [aiApiKey, setAiApiKey] = useState(step.config.aiApiKey || '');
   const [aiModel, setAiModel] = useState(step.config.aiModel || '');
@@ -110,6 +114,13 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
   );
   const [aiLoopEarlyExitError, setAiLoopEarlyExitError] = useState<string | null>(null);
 
+  // Fetch AI providers when panel shows an AI node
+  const isAiNode = ['ai-prompt', 'ai-structured-output', 'ai-agent', 'ai-router'].includes(step.type);
+  useEffect(() => {
+    if (!isAiNode) return;
+    aiProvidersApi.list().then(setAiProviders).catch(() => setAiProviders([]));
+  }, [isAiNode]);
+
   // Picker state
   const [activePicker, setActivePicker] = useState<string | null>(null);
 
@@ -160,6 +171,7 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
     setMaxAttempts(step.retryPolicy?.maxAttempts || 3);
     setInitialInterval(step.retryPolicy?.initialInterval || 1000);
     setBackoffCoefficient(step.retryPolicy?.backoffCoefficient || 2);
+    setAiProviderId(step.config.aiProviderId || '');
     setAiBaseUrl(step.config.aiBaseUrl || '');
     setAiApiKey(step.config.aiApiKey || '');
     setAiModel(step.config.aiModel || '');
@@ -249,6 +261,7 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         config.dbQuery = dbQuery;
         break;
       case 'ai-prompt':
+        config.aiProviderId = aiProviderId || undefined;
         config.aiBaseUrl = aiBaseUrl;
         config.aiApiKey = aiApiKey;
         config.aiModel = aiModel;
@@ -259,6 +272,7 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         config.aiHeaders = aiHeaders.length > 0 ? Object.fromEntries(aiHeaders.filter(h => h.key).map(h => [h.key, h.value])) : undefined;
         break;
       case 'ai-structured-output':
+        config.aiProviderId = aiProviderId || undefined;
         config.aiBaseUrl = aiBaseUrl;
         config.aiApiKey = aiApiKey;
         config.aiModel = aiModel;
@@ -270,6 +284,7 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         try { config.aiOutputSchema = aiOutputSchema ? JSON.parse(aiOutputSchema) : undefined; } catch { /* keep existing */ }
         break;
       case 'ai-agent':
+        config.aiProviderId = aiProviderId || undefined;
         config.aiBaseUrl = aiBaseUrl;
         config.aiApiKey = aiApiKey;
         config.aiModel = aiModel;
@@ -282,6 +297,7 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         config.aiMaxIterations = Number(aiMaxIterations);
         break;
       case 'ai-router':
+        config.aiProviderId = aiProviderId || undefined;
         config.aiBaseUrl = aiBaseUrl;
         config.aiApiKey = aiApiKey;
         config.aiModel = aiModel;
@@ -952,9 +968,41 @@ print(json.dumps({'result': result}))`}
       case 'ai-router':
         return (
           <>
-            {/* Connection */}
+            {/* Provider selector */}
+            {aiProviders.length === 0 && (
+              <div className="form-group">
+                <p className="text-xs" style={{ color: '#d97706', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 4, padding: '6px 8px' }}>
+                  No providers configured. Visit <strong>/settings/ai-providers</strong> to add one.
+                </p>
+              </div>
+            )}
             <div className="form-group">
-              <label className="form-label">Base URL (vLLM Server)</label>
+              <label className="form-label">Provider</label>
+              <select
+                className="form-select"
+                value={aiProviderId}
+                onChange={(e) => setAiProviderId(e.target.value)}
+              >
+                <option value="">— (custom / inline)</option>
+                {aiProviders.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.model}){p.isDefault ? ' ★' : ''}
+                  </option>
+                ))}
+              </select>
+              {aiProviderId && (() => {
+                const p = aiProviders.find(x => x.id === aiProviderId);
+                return p ? (
+                  <p className="text-xs text-muted mt-1">
+                    Using provider: {p.name} ({p.baseUrl}). The Base URL / API Key / Model / Headers fields below are ignored at runtime.
+                  </p>
+                ) : null;
+              })()}
+            </div>
+
+            {/* Connection */}
+            <div className="form-group" style={aiProviderId ? { opacity: 0.5 } : undefined}>
+              <label className="form-label">Base URL (vLLM Server){aiProviderId ? ' (ignored)' : ''}</label>
               <input
                 type="text"
                 className="form-input"
@@ -963,8 +1011,8 @@ print(json.dumps({'result': result}))`}
                 placeholder="http://localhost:8000/v1"
               />
             </div>
-            <div className="form-group">
-              <label className="form-label">API Key (optional)</label>
+            <div className="form-group" style={aiProviderId ? { opacity: 0.5 } : undefined}>
+              <label className="form-label">API Key (optional){aiProviderId ? ' (ignored)' : ''}</label>
               <input
                 type="password"
                 className="form-input"
@@ -973,8 +1021,8 @@ print(json.dumps({'result': result}))`}
                 placeholder="Leave empty if not required"
               />
             </div>
-            <div className="form-group">
-              <label className="form-label">Model</label>
+            <div className="form-group" style={aiProviderId ? { opacity: 0.5 } : undefined}>
+              <label className="form-label">Model{aiProviderId ? ' (ignored)' : ''}</label>
               <input
                 type="text"
                 className="form-input"
@@ -985,9 +1033,9 @@ print(json.dumps({'result': result}))`}
             </div>
 
             {/* Headers */}
-            <div className="form-group">
+            <div className="form-group" style={aiProviderId ? { opacity: 0.5 } : undefined}>
               <div className="flex justify-between items-center mb-2">
-                <label className="form-label">Headers (Auth)</label>
+                <label className="form-label">Headers (Auth){aiProviderId ? ' (ignored)' : ''}</label>
                 <button
                   className="btn btn-ghost btn-xs"
                   onClick={() => setAiHeaders([...aiHeaders, { key: '', value: '' }])}

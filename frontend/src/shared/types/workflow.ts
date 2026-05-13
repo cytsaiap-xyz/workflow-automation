@@ -183,6 +183,7 @@ export interface StepConfig {
   dbPassword?: string;
   dbQuery?: string;
   // AI fields
+  aiProviderId?: string;
   aiBaseUrl?: string;
   aiApiKey?: string;
   aiModel?: string;

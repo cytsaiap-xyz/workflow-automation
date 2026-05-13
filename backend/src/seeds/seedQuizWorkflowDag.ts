@@ -33,6 +33,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { WorkflowModel } from '../models/workflow';
 import { PromptTemplateModel } from '../models/promptTemplateModel';
+import { AiProviderModel } from '../models/aiProviderModel';
 
 const QUIZ_WORKFLOW_ID = 'builtin-quiz-generator';
 
@@ -102,8 +103,15 @@ const FIXER_SCHEMA = {
  * Fix-loop orchestrator. Receives initial generator questions plus the first-
  * pass verifier and reviewer results via inputVars, then iterates up to 3
  * rounds of fix → re-verify → re-review. Stops early when both gates pass.
+ *
+ * Built as a function so the seeder can bake the explicit `providerId` into
+ * every `ai.call` invocation. Passing the id literal at seed time makes the
+ * provider reference visible in the stored workflow definition rather than
+ * relying on runtime fallback to the default provider.
  */
-const FIXER_LOOP_CODE = `
+const buildFixerLoopCode = (providerId?: string): string => {
+  const idLiteral = providerId ? JSON.stringify(providerId) : 'undefined';
+  return `
 const focusArea  = inputData.focusArea  || variables.input?.focus_area || '';
 const mustCover  = Array.isArray(inputData.mustCover) ? inputData.mustCover : [];
 const avoid      = Array.isArray(inputData.avoid)     ? inputData.avoid     : [];
@@ -130,6 +138,7 @@ for (let round = 1; round <= 3; round++) {
   roundsUsed = round;
 
   const fixer = await ai.call({
+    providerId: ${idLiteral},
     systemTemplate: 'quiz-fixer-system',
     userTemplate: 'quiz-fixer-system',
     context: {
@@ -155,6 +164,7 @@ for (let round = 1; round <= 3; round++) {
   if (round === 3) break;
 
   const verifier = await ai.call({
+    providerId: ${idLiteral},
     systemTemplate: 'quiz-verifier-system',
     userTemplate: 'quiz-verifier-system',
     context: { ...baseCtx, input: { ...baseCtx.input, questions } },
@@ -163,6 +173,7 @@ for (let round = 1; round <= 3; round++) {
   verifierResults = verifier.parsed?.results || [];
 
   const reviewer = await ai.call({
+    providerId: ${idLiteral},
     systemTemplate: 'quiz-reviewer-system',
     userTemplate: 'quiz-reviewer-system',
     context: { ...baseCtx, input: { ...baseCtx.input, questions } },
@@ -175,6 +186,7 @@ for (let round = 1; round <= 3; round++) {
 
 return { questions, rounds_used: roundsUsed };
 `;
+};
 
 /**
  * Convergence node. The three paths into here are mutually exclusive at the
@@ -191,7 +203,7 @@ return { questions: raw };
 
 // Bump when changing the seeded layout / node ids / edges so existing DB rows
 // get refreshed on the next startup. Increment when default positions change.
-const QUIZ_LAYOUT_VERSION = 3;
+const QUIZ_LAYOUT_VERSION = 4;
 
 export function seedQuizWorkflowDag(): void {
   const existing = WorkflowModel.getById(QUIZ_WORKFLOW_ID);
@@ -216,6 +228,14 @@ export function seedQuizWorkflowDag(): void {
   const generatorTpl = tplId('quiz-generator-system');
   const verifierTpl = tplId('quiz-verifier-system');
   const reviewerTpl = tplId('quiz-reviewer-system');
+
+  // Bake the default AI provider's id into every AI node's config so the
+  // workflow definition explicitly records which provider it runs against
+  // (instead of relying on the runtime fallback chain). If no default
+  // provider exists at seed time (e.g., env vars unset and no UI-created
+  // provider yet), aiProviderId stays undefined and the executor falls
+  // back to inline config → default-at-call-time.
+  const providerId = AiProviderModel.getDefault()?.id;
 
   // Top-to-bottom layout: nodes stacked vertically along a center column,
   // with verifier and reviewer rendered side-by-side at the same y.
@@ -248,6 +268,7 @@ export function seedQuizWorkflowDag(): void {
         type: 'ai-structured-output',
         position: { x: COL, y: ROW },     // row 1
         config: {
+          aiProviderId: providerId,
           aiPromptTemplateSystemId: analyzerTpl,
           aiPrompt: 'User focus area: ${input.focus_area}\n\nDocument sample (first chunk):\n${inputData.firstChunkText}',
           aiOutputSchema: ANALYZER_SCHEMA,
@@ -262,6 +283,7 @@ export function seedQuizWorkflowDag(): void {
         type: 'ai-structured-output',
         position: { x: COL, y: ROW * 2 }, // row 2
         config: {
+          aiProviderId: providerId,
           aiPromptTemplateSystemId: generatorTpl,
           aiPrompt: '${inputData.chunks}',
           aiOutputSchema: GENERATOR_SCHEMA,
@@ -279,6 +301,7 @@ export function seedQuizWorkflowDag(): void {
         type: 'ai-structured-output',
         position: { x: 0, y: ROW * 3 },   // row 3, left branch
         config: {
+          aiProviderId: providerId,
           aiPromptTemplateSystemId: verifierTpl,
           aiPrompt: '${inputData.questions}',
           aiOutputSchema: PASS_FAIL_SCHEMA,
@@ -296,6 +319,7 @@ export function seedQuizWorkflowDag(): void {
         type: 'ai-structured-output',
         position: { x: COL * 2, y: ROW * 3 }, // row 3, right branch
         config: {
+          aiProviderId: providerId,
           aiPromptTemplateSystemId: reviewerTpl,
           aiPrompt: '${inputData.questions}',
           aiOutputSchema: PASS_FAIL_SCHEMA,
@@ -312,7 +336,7 @@ export function seedQuizWorkflowDag(): void {
         name: 'Fix flagged + retry (up to 3)',
         type: 'script-js',
         position: { x: COL, y: ROW * 4 }, // row 4
-        config: { code: FIXER_LOOP_CODE },
+        config: { code: buildFixerLoopCode(providerId) },
         inputVars: [
           { name: 'generatorQuestions', source: '${generator.output.parsed.questions}' },
           { name: 'verifierOutput', source: '${verifier.output.parsed}' },
