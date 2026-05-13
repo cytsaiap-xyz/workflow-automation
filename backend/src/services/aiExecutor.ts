@@ -13,6 +13,16 @@ const log = createLogger('aiExecutor');
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Strip <thought>...</thought> blocks that some models (Gemma, certain
+ * reasoning models) emit alongside their visible response. The blocks are
+ * multi-line and may appear anywhere in the content. Non-greedy match so
+ * adjacent thought blocks don't merge into one.
+ */
+export function stripThoughtTags(content: string): string {
+  return content.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+}
+
 interface ResolvedProvider {
   baseUrl: string;
   model: string;
@@ -173,7 +183,7 @@ export class AiExecutor {
         max_tokens: config.aiMaxTokens ?? 2048,
       });
 
-      const response = completion.choices[0]?.message?.content || '';
+      const response = stripThoughtTags(completion.choices[0]?.message?.content || '');
       const usage = completion.usage;
 
       logs.push(`Response received (${usage?.total_tokens ?? '?'} tokens)`);
@@ -263,7 +273,7 @@ export class AiExecutor {
       }
 
       const completion = await client.chat.completions.create(params);
-      const raw = completion.choices[0]?.message?.content || '{}';
+      const raw = stripThoughtTags(completion.choices[0]?.message?.content || '{}');
       const usage = completion.usage;
 
       logs.push(`Response received (${usage?.total_tokens ?? '?'} tokens)`);
@@ -362,7 +372,7 @@ export class AiExecutor {
         // If no tool calls, agent is done
         if (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) {
           logs.push(`Agent completed after ${iterations} iteration(s)`);
-          const response = assistantMessage.content || '';
+          const response = stripThoughtTags(assistantMessage.content || '');
 
           let parsed: any = response;
           try { parsed = JSON.parse(response); } catch { /* keep string */ }
@@ -422,9 +432,11 @@ export class AiExecutor {
       // Max iterations reached
       logs.push(`Agent reached max iterations (${maxIterations})`);
       const lastMessage = messages[messages.length - 1];
-      const finalContent = typeof lastMessage === 'object' && 'content' in lastMessage
-        ? (lastMessage.content as string || '')
-        : '';
+      const finalContent = stripThoughtTags(
+        typeof lastMessage === 'object' && 'content' in lastMessage
+          ? (lastMessage.content as string || '')
+          : ''
+      );
 
       return {
         success: true,

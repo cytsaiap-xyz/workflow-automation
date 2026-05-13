@@ -4,6 +4,15 @@ import { useAssistantStore } from '@/shared/stores/assistantStore';
 import { PendingChangeCard } from './PendingChangeCard';
 import { ToolCallBlock } from './ToolCallBlock';
 
+function splitThoughts(content: string): { visible: string; thoughts: string[] } {
+  const thoughts: string[] = [];
+  const visible = content.replace(/<thought>([\s\S]*?)<\/thought>/g, (_, t) => {
+    thoughts.push(t.trim());
+    return '';
+  }).trim();
+  return { visible, thoughts };
+}
+
 interface Props {
   workflowId: string;
   onWorkflowUpdated?: () => void;
@@ -172,18 +181,51 @@ export function AssistantChatPanel({ workflowId, onWorkflowUpdated }: Props) {
             >
               {m.role}
             </div>
-            {m.content && (
-              <div
-                style={{
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  fontSize: '0.9em',
-                  color: 'var(--text-primary)',
-                }}
-              >
-                {m.content}
-              </div>
-            )}
+            {m.content && (() => {
+              const { visible, thoughts } = splitThoughts(m.content);
+              return (
+                <>
+                  {visible && (
+                    <div
+                      style={{
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        fontSize: '0.9em',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      {visible}
+                    </div>
+                  )}
+                  {thoughts.map((t, ti) => (
+                    <details
+                      key={ti}
+                      style={{
+                        marginTop: 6,
+                        padding: '4px 8px',
+                        background: 'var(--color-surface-2, #f5f5f5)',
+                        borderRadius: 4,
+                        fontSize: '0.85em',
+                      }}
+                    >
+                      <summary style={{ cursor: 'pointer', color: 'var(--color-text-muted, #666)' }}>
+                        ▸ Thinking
+                      </summary>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          color: 'var(--color-text-muted, #666)',
+                        }}
+                      >
+                        {t}
+                      </div>
+                    </details>
+                  ))}
+                </>
+              );
+            })()}
             {m.toolCalls?.map((tc) => (
               <ToolCallBlock
                 key={tc.id}
