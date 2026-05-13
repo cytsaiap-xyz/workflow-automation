@@ -73,6 +73,12 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
     step.config.aiRoutes || []
   );
 
+  // json-output-writer fields
+  const [jsonOutputFilename, setJsonOutputFilename] = useState(step.config.jsonOutputFilename || '');
+  const [jsonOutputDirectory, setJsonOutputDirectory] = useState(step.config.jsonOutputDirectory || '');
+  const [jsonOutputRootKey, setJsonOutputRootKey] = useState(step.config.jsonOutputRootKey || '');
+  const [jsonOutputPretty, setJsonOutputPretty] = useState(step.config.jsonOutputPretty !== false);
+
   // Picker state
   const [activePicker, setActivePicker] = useState<string | null>(null);
 
@@ -135,6 +141,10 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
     setAiToolsJson(step.config.aiTools ? JSON.stringify(step.config.aiTools, null, 2) : '');
     setAiMaxIterations(step.config.aiMaxIterations || 10);
     setAiRoutes(step.config.aiRoutes || []);
+    setJsonOutputFilename(step.config.jsonOutputFilename || '');
+    setJsonOutputDirectory(step.config.jsonOutputDirectory || '');
+    setJsonOutputRootKey(step.config.jsonOutputRootKey || '');
+    setJsonOutputPretty(step.config.jsonOutputPretty !== false);
   }, [step]);
 
   const handleSave = () => {
@@ -229,6 +239,12 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         config.aiMaxTokens = Number(aiMaxTokens);
         config.aiHeaders = aiHeaders.length > 0 ? Object.fromEntries(aiHeaders.filter(h => h.key).map(h => [h.key, h.value])) : undefined;
         config.aiRoutes = aiRoutes.filter(r => r.branchId.trim());
+        break;
+      case 'json-output-writer':
+        config.jsonOutputFilename = jsonOutputFilename.trim() || undefined;
+        config.jsonOutputDirectory = jsonOutputDirectory.trim() || undefined;
+        config.jsonOutputRootKey = jsonOutputRootKey.trim() || undefined;
+        config.jsonOutputPretty = jsonOutputPretty;
         break;
     }
 
@@ -1181,6 +1197,61 @@ print(json.dumps({'result': result}))`}
                 {step.type === 'ai-agent' && <>&nbsp;&nbsp;toolCalls: array,<br/>&nbsp;&nbsp;iterations: number,<br/></>}
                 {'}'}
               </div>
+            </div>
+          </>
+        );
+
+      case 'json-output-writer':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Filename</label>
+              <input
+                type="text"
+                className="form-input"
+                value={jsonOutputFilename}
+                onChange={(e) => setJsonOutputFilename(e.target.value)}
+                placeholder="output.json"
+              />
+              <p className="text-xs text-muted mt-1">
+                File name written under <code>data/uploads/&lt;execution-id&gt;/</code>. Defaults to <code>output.json</code>.
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Directory (optional)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={jsonOutputDirectory}
+                onChange={(e) => setJsonOutputDirectory(e.target.value)}
+                placeholder="(default: per-execution uploads dir)"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Root key (optional)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={jsonOutputRootKey}
+                onChange={(e) => setJsonOutputRootKey(e.target.value)}
+                placeholder="(default: write entire resolved input)"
+              />
+              <p className="text-xs text-muted mt-1">
+                If set, writes only <code>inputData[&lt;rootKey&gt;]</code> instead of the whole resolved input object.
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={jsonOutputPretty}
+                  onChange={(e) => setJsonOutputPretty(e.target.checked)}
+                />
+                Pretty-print (2-space indent)
+              </label>
+            </div>
+            <div className="text-xs text-muted">
+              <strong>Output:</strong> {'{ filePath: string }'}
             </div>
           </>
         );

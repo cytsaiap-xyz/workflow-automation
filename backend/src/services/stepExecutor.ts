@@ -303,6 +303,27 @@ export class StepExecutor {
         }
       }
 
+      case 'json-output-writer': {
+        const { writeJsonOutput } = await import('./jsonOutputWriter');
+        try {
+          const rootKey = step.config.jsonOutputRootKey?.trim();
+          const body = rootKey ? resolvedInput[rootKey] : resolvedInput;
+          const out = await writeJsonOutput(body, {
+            executionId: context.variables.executionId || 'unknown',
+            directory: step.config.jsonOutputDirectory,
+            filename: step.config.jsonOutputFilename,
+            pretty: step.config.jsonOutputPretty,
+          });
+          return {
+            success: true,
+            output: { filePath: out.filePath },
+            logs: [`Wrote JSON to ${out.filePath}`],
+          };
+        } catch (e: any) {
+          return { success: false, error: `json-output-writer failed: ${e.message}`, logs: [] };
+        }
+      }
+
       case 'quiz-output-writer': {
         const { writeQuizOutput } = await import('./quizOutputWriter');
         try {

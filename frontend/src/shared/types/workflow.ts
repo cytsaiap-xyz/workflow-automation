@@ -146,7 +146,8 @@ export type StepType =
   | 'ai-agent'
   | 'ai-router'
   | 'load-document'
-  | 'quiz-output-writer';
+  | 'quiz-output-writer'
+  | 'json-output-writer';
 
 export interface StepConfig {
   code?: string;
@@ -191,6 +192,17 @@ export interface StepConfig {
   aiTools?: Array<{ type: string; function: { name: string; description: string; parameters: Record<string, any> } }>;
   aiMaxIterations?: number;
   aiRoutes?: Array<{ branchId: string; description: string }>;
+  // load-document
+  loadDocumentSourcePath?: string;
+  loadDocumentMaxChunkChars?: number;
+  // quiz-output-writer
+  quizOutputDirectory?: string;
+  quizOutputFilename?: string;
+  // json-output-writer
+  jsonOutputDirectory?: string;
+  jsonOutputFilename?: string;
+  jsonOutputRootKey?: string;
+  jsonOutputPretty?: boolean;
 }
 
 export interface VariableMapping {
@@ -318,4 +330,5 @@ export const STEP_TYPE_INFO: Record<StepType, { label: string; icon: string; col
   'ai-router': { label: 'AI Router', icon: '🔀', color: '#7c3aed' },
   'load-document': { label: 'Load Document', icon: '📄', color: '#0ea5e9' },
   'quiz-output-writer': { label: 'Quiz Output Writer', icon: '📝', color: '#10b981' },
+  'json-output-writer': { label: 'JSON Output Writer', icon: '💾', color: '#10b981' },
 };

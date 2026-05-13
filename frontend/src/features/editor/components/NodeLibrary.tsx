@@ -33,11 +33,15 @@ const NODE_CATEGORIES = {
     label: '🤖 AI',
     types: ['ai-prompt', 'ai-structured-output', 'ai-agent', 'ai-router'] as StepType[],
   },
+  data: {
+    label: '📦 Data & Files',
+    types: ['load-document', 'json-output-writer', 'quiz-output-writer'] as StepType[],
+  },
 };
 
 function NodeLibrary({ onAddStep, stations, onAddStepToStation, onClose }: NodeLibraryProps) {
   const [search, setSearch] = useState('');
-  const [expandedCategories, setExpandedCategories] = useState<string[]>(['triggers', 'actions', 'flow', 'ai']);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>(['triggers', 'actions', 'flow', 'ai', 'data']);
   const [selectedStation, setSelectedStation] = useState<string>(stations[0]?.id || '');
   const offlineMode = useConfigStore((s) => s.config?.offlineMode ?? false);
 
