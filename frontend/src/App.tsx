@@ -6,6 +6,7 @@ import MonitoringPage from './features/monitoring/MonitoringPage';
 import ExecutionsPage from './features/executions/ExecutionsPage';
 import { AIProvidersPage } from './features/settings/AIProvidersPage';
 import { PromptLibraryPage } from './features/settings/PromptLibraryPage';
+import UserManualPage from './features/help/UserManualPage';
 import Sidebar from './shared/components/Sidebar';
 import ToastContainer from './shared/components/ToastContainer';
 import { ConfirmProvider } from './shared/components/ConfirmDialog';
@@ -33,6 +34,7 @@ function App() {
             <Route path="/executions" element={<MainLayout><ExecutionsPage /></MainLayout>} />
             <Route path="/settings/ai-providers" element={<MainLayout><AIProvidersPage /></MainLayout>} />
             <Route path="/settings/prompt-templates" element={<MainLayout><PromptLibraryPage /></MainLayout>} />
+            <Route path="/help" element={<MainLayout><UserManualPage /></MainLayout>} />
             {/* Editor pages without sidebar for full-screen editing */}
             <Route path="/editor/:id" element={<EditorPage />} />
             <Route path="/editor" element={<EditorPage />} />

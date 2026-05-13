@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Activity,
   List,
+  BookOpen,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -18,6 +19,7 @@ const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/executions', label: 'Executions', icon: List },
   { path: '/monitoring', label: 'Monitoring', icon: Activity },
+  { path: '/help', label: 'User Manual', icon: BookOpen },
 ];
 
 export default function Sidebar({ children }: SidebarProps) {
