@@ -303,6 +303,91 @@ export class StepExecutor {
         }
       }
 
+      case 'ai-loop': {
+        const { runAiLoop } = await import('./aiLoop');
+        try {
+          const result = await runAiLoop(
+            { ...context.variables, inputData: resolvedInput },
+            {
+              rounds: step.config.aiLoopRounds ?? 1,
+              steps: step.config.aiLoopSteps ?? [],
+              earlyExitWhen: step.config.aiLoopEarlyExitWhen,
+            },
+          );
+          return {
+            success: true,
+            output: result,
+            logs: [
+              `ai-loop ran ${result.rounds} round(s)${result.earlyExit ? ' (early exit)' : ''}`,
+            ],
+          };
+        } catch (e: any) {
+          return { success: false, error: `ai-loop failed: ${e.message}`, logs: [] };
+        }
+      }
+
+      case 'transform': {
+        const { transform } = await import('./transformer');
+        try {
+          const mapping = step.config.transformMapping || {};
+          const out = transform(
+            { ...context.variables, inputData: resolvedInput },
+            { mapping },
+          );
+          return {
+            success: true,
+            output: out,
+            logs: [`transform produced ${Object.keys(out).length} field(s)`],
+          };
+        } catch (e: any) {
+          return { success: false, error: `transform failed: ${e.message}`, logs: [] };
+        }
+      }
+
+      case 'aggregate': {
+        const { aggregate } = await import('./aggregator');
+        try {
+          const path = step.config.aggregateInputPath?.trim() || 'items';
+          // dot-path into resolvedInput; allow a top-level direct array via empty string.
+          const arr = path
+            ? path.split('.').reduce<any>((acc, p) => acc?.[p], resolvedInput)
+            : resolvedInput;
+          const out = aggregate(arr, {
+            operation: step.config.aggregateOperation || 'count',
+            field: step.config.aggregateField,
+            separator: step.config.aggregateSeparator,
+          });
+          return {
+            success: true,
+            output: out,
+            logs: [`aggregate ${step.config.aggregateOperation || 'count'} over ${out.count} item(s)`],
+          };
+        } catch (e: any) {
+          return { success: false, error: `aggregate failed: ${e.message}`, logs: [] };
+        }
+      }
+
+      case 'json-output-writer': {
+        const { writeJsonOutput } = await import('./jsonOutputWriter');
+        try {
+          const rootKey = step.config.jsonOutputRootKey?.trim();
+          const body = rootKey ? resolvedInput[rootKey] : resolvedInput;
+          const out = await writeJsonOutput(body, {
+            executionId: context.variables.executionId || 'unknown',
+            directory: step.config.jsonOutputDirectory,
+            filename: step.config.jsonOutputFilename,
+            pretty: step.config.jsonOutputPretty,
+          });
+          return {
+            success: true,
+            output: { filePath: out.filePath },
+            logs: [`Wrote JSON to ${out.filePath}`],
+          };
+        } catch (e: any) {
+          return { success: false, error: `json-output-writer failed: ${e.message}`, logs: [] };
+        }
+      }
+
       case 'quiz-output-writer': {
         const { writeQuizOutput } = await import('./quizOutputWriter');
         try {

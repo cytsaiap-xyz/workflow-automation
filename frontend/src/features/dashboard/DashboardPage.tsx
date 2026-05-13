@@ -4,6 +4,7 @@ import { useWorkflowStore } from '../editor/stores/workflowStore';
 import ExecuteDialog from '../editor/components/ExecuteDialog';
 import { RunWithInputDialog } from '../editor/RunWithInputDialog';
 import type { Workflow } from '../../shared/types/workflow';
+import { isV2 } from '../../shared/types/workflow';
 import { workflowApi } from '../../shared/api/workflowApi';
 import {
   Plus,
@@ -288,7 +289,14 @@ function DashboardPage() {
                       )}
                     </td>
                     <td>{getStatusBadge(workflow.status)}</td>
-                    <td>{workflow.definition.stations.length} {workflow.definition.stations.length === 1 ? 'station' : 'stations'}</td>
+                    <td>{(() => {
+                      if (isV2(workflow.definition)) {
+                        const n = workflow.definition.nodes?.length ?? 0;
+                        return `${n} ${n === 1 ? 'node' : 'nodes'}`;
+                      }
+                      const n = workflow.definition.stations?.length ?? 0;
+                      return `${n} ${n === 1 ? 'station' : 'stations'}`;
+                    })()}</td>
                     <td className="text-muted text-sm">
                       {new Date(workflow.updatedAt).toLocaleDateString()}
                     </td>

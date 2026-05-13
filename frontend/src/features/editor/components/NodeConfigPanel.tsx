@@ -73,6 +73,43 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
     step.config.aiRoutes || []
   );
 
+  // json-output-writer fields
+  const [jsonOutputFilename, setJsonOutputFilename] = useState(step.config.jsonOutputFilename || '');
+  const [jsonOutputDirectory, setJsonOutputDirectory] = useState(step.config.jsonOutputDirectory || '');
+  const [jsonOutputRootKey, setJsonOutputRootKey] = useState(step.config.jsonOutputRootKey || '');
+  const [jsonOutputPretty, setJsonOutputPretty] = useState(step.config.jsonOutputPretty !== false);
+
+  // load-document fields
+  const [loadDocumentSourcePath, setLoadDocumentSourcePath] = useState(step.config.loadDocumentSourcePath || '');
+  const [loadDocumentMaxChunkChars, setLoadDocumentMaxChunkChars] = useState(step.config.loadDocumentMaxChunkChars ?? 2000);
+
+  // quiz-output-writer fields
+  const [quizOutputFilename, setQuizOutputFilename] = useState(step.config.quizOutputFilename || '');
+  const [quizOutputDirectory, setQuizOutputDirectory] = useState(step.config.quizOutputDirectory || '');
+
+  // aggregate fields
+  const [aggregateInputPath, setAggregateInputPath] = useState(step.config.aggregateInputPath || 'items');
+  const [aggregateOperation, setAggregateOperation] = useState(step.config.aggregateOperation || 'count');
+  const [aggregateField, setAggregateField] = useState(step.config.aggregateField || '');
+  const [aggregateSeparator, setAggregateSeparator] = useState(step.config.aggregateSeparator || '');
+
+  // transform field — edited as JSON text so the user can keep multi-key mappings readable
+  const [transformMappingJson, setTransformMappingJson] = useState(
+    step.config.transformMapping ? JSON.stringify(step.config.transformMapping, null, 2) : '{\n  \n}',
+  );
+  const [transformMappingError, setTransformMappingError] = useState<string | null>(null);
+
+  // ai-loop fields — steps and earlyExitWhen edited as JSON; rounds is a plain number
+  const [aiLoopRounds, setAiLoopRounds] = useState(step.config.aiLoopRounds ?? 3);
+  const [aiLoopStepsJson, setAiLoopStepsJson] = useState(
+    step.config.aiLoopSteps ? JSON.stringify(step.config.aiLoopSteps, null, 2) : '[\n  \n]',
+  );
+  const [aiLoopStepsError, setAiLoopStepsError] = useState<string | null>(null);
+  const [aiLoopEarlyExitJson, setAiLoopEarlyExitJson] = useState(
+    step.config.aiLoopEarlyExitWhen ? JSON.stringify(step.config.aiLoopEarlyExitWhen, null, 2) : '[]',
+  );
+  const [aiLoopEarlyExitError, setAiLoopEarlyExitError] = useState<string | null>(null);
+
   // Picker state
   const [activePicker, setActivePicker] = useState<string | null>(null);
 
@@ -135,6 +172,31 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
     setAiToolsJson(step.config.aiTools ? JSON.stringify(step.config.aiTools, null, 2) : '');
     setAiMaxIterations(step.config.aiMaxIterations || 10);
     setAiRoutes(step.config.aiRoutes || []);
+    setJsonOutputFilename(step.config.jsonOutputFilename || '');
+    setJsonOutputDirectory(step.config.jsonOutputDirectory || '');
+    setJsonOutputRootKey(step.config.jsonOutputRootKey || '');
+    setJsonOutputPretty(step.config.jsonOutputPretty !== false);
+    setLoadDocumentSourcePath(step.config.loadDocumentSourcePath || '');
+    setLoadDocumentMaxChunkChars(step.config.loadDocumentMaxChunkChars ?? 2000);
+    setQuizOutputFilename(step.config.quizOutputFilename || '');
+    setQuizOutputDirectory(step.config.quizOutputDirectory || '');
+    setAggregateInputPath(step.config.aggregateInputPath || 'items');
+    setAggregateOperation(step.config.aggregateOperation || 'count');
+    setAggregateField(step.config.aggregateField || '');
+    setAggregateSeparator(step.config.aggregateSeparator || '');
+    setTransformMappingJson(
+      step.config.transformMapping ? JSON.stringify(step.config.transformMapping, null, 2) : '{\n  \n}',
+    );
+    setTransformMappingError(null);
+    setAiLoopRounds(step.config.aiLoopRounds ?? 3);
+    setAiLoopStepsJson(
+      step.config.aiLoopSteps ? JSON.stringify(step.config.aiLoopSteps, null, 2) : '[\n  \n]',
+    );
+    setAiLoopStepsError(null);
+    setAiLoopEarlyExitJson(
+      step.config.aiLoopEarlyExitWhen ? JSON.stringify(step.config.aiLoopEarlyExitWhen, null, 2) : '[]',
+    );
+    setAiLoopEarlyExitError(null);
   }, [step]);
 
   const handleSave = () => {
@@ -229,6 +291,52 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         config.aiMaxTokens = Number(aiMaxTokens);
         config.aiHeaders = aiHeaders.length > 0 ? Object.fromEntries(aiHeaders.filter(h => h.key).map(h => [h.key, h.value])) : undefined;
         config.aiRoutes = aiRoutes.filter(r => r.branchId.trim());
+        break;
+      case 'json-output-writer':
+        config.jsonOutputFilename = jsonOutputFilename.trim() || undefined;
+        config.jsonOutputDirectory = jsonOutputDirectory.trim() || undefined;
+        config.jsonOutputRootKey = jsonOutputRootKey.trim() || undefined;
+        config.jsonOutputPretty = jsonOutputPretty;
+        break;
+      case 'load-document':
+        config.loadDocumentSourcePath = loadDocumentSourcePath.trim() || undefined;
+        config.loadDocumentMaxChunkChars = Number(loadDocumentMaxChunkChars) || undefined;
+        break;
+      case 'quiz-output-writer':
+        config.quizOutputFilename = quizOutputFilename.trim() || undefined;
+        config.quizOutputDirectory = quizOutputDirectory.trim() || undefined;
+        break;
+      case 'aggregate':
+        config.aggregateInputPath = aggregateInputPath.trim() || undefined;
+        config.aggregateOperation = aggregateOperation;
+        config.aggregateField = aggregateField.trim() || undefined;
+        config.aggregateSeparator = aggregateSeparator || undefined;
+        break;
+      case 'transform':
+        try {
+          const parsed = JSON.parse(transformMappingJson);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            // Force all values to strings — mapping values must be interpolation expressions
+            const clean: Record<string, string> = {};
+            for (const [k, v] of Object.entries(parsed)) clean[k] = String(v);
+            config.transformMapping = clean;
+          }
+        } catch {
+          // Leave previous mapping in place; render() shows the parse error
+        }
+        break;
+      case 'ai-loop':
+        config.aiLoopRounds = Math.max(1, Math.floor(Number(aiLoopRounds) || 1));
+        try {
+          const steps = JSON.parse(aiLoopStepsJson);
+          if (Array.isArray(steps)) config.aiLoopSteps = steps;
+        } catch { /* keep previous */ }
+        try {
+          const exits = JSON.parse(aiLoopEarlyExitJson);
+          if (Array.isArray(exits)) {
+            config.aiLoopEarlyExitWhen = exits.map((s: unknown) => String(s)).filter(s => s.trim() !== '');
+          }
+        } catch { /* keep previous */ }
         break;
     }
 
@@ -1181,6 +1289,314 @@ print(json.dumps({'result': result}))`}
                 {step.type === 'ai-agent' && <>&nbsp;&nbsp;toolCalls: array,<br/>&nbsp;&nbsp;iterations: number,<br/></>}
                 {'}'}
               </div>
+            </div>
+          </>
+        );
+
+      case 'ai-loop':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Max rounds</label>
+              <input
+                type="number"
+                className="form-input"
+                value={aiLoopRounds}
+                onChange={(e) => setAiLoopRounds(Number(e.target.value))}
+                min={1}
+                max={20}
+              />
+              <p className="text-xs text-muted mt-1">
+                Hard upper bound. The loop stops earlier when all <code>earlyExitWhen</code> expressions are truthy after a round.
+              </p>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Inner steps (JSON)</label>
+              <textarea
+                className="form-textarea"
+                value={aiLoopStepsJson}
+                onChange={(e) => {
+                  setAiLoopStepsJson(e.target.value);
+                  try {
+                    const parsed = JSON.parse(e.target.value);
+                    setAiLoopStepsError(Array.isArray(parsed) ? null : 'Must be a JSON array');
+                  } catch (err) {
+                    setAiLoopStepsError((err as Error).message);
+                  }
+                }}
+                placeholder={'[\n  {\n    "id": "fix",\n    "systemTemplate": "quiz-fixer-system",\n    "outputSchema": { "type": "object", "properties": { "fixed_questions": { "type": "array" } }, "required": ["fixed_questions"] }\n  },\n  {\n    "id": "verify",\n    "systemTemplate": "quiz-verifier-system",\n    "outputSchema": { "type": "object", "properties": { "results": { "type": "array" }, "all_pass": { "type": "boolean" } }, "required": ["results", "all_pass"] }\n  },\n  {\n    "id": "review",\n    "systemTemplate": "quiz-reviewer-system",\n    "outputSchema": { "type": "object", "properties": { "results": { "type": "array" }, "all_pass": { "type": "boolean" } }, "required": ["results", "all_pass"] }\n  }\n]'}
+                style={{ minHeight: '180px', fontFamily: 'monospace' }}
+              />
+              {aiLoopStepsError && (
+                <p className="text-xs" style={{ color: 'var(--accent-danger)' }}>{aiLoopStepsError}</p>
+              )}
+              <p className="text-xs text-muted mt-1">
+                Each step is one <code>ai.call</code> with a prompt template (by name) and an optional JSON schema. Steps run in order each round; later steps can reference earlier ones via <code>{'${earlierId.parsed.field}'}</code>. Add <code>runWhen</code> to skip a step conditionally.
+              </p>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Early-exit conditions (JSON array)</label>
+              <textarea
+                className="form-textarea"
+                value={aiLoopEarlyExitJson}
+                onChange={(e) => {
+                  setAiLoopEarlyExitJson(e.target.value);
+                  try {
+                    const parsed = JSON.parse(e.target.value);
+                    setAiLoopEarlyExitError(Array.isArray(parsed) ? null : 'Must be a JSON array');
+                  } catch (err) {
+                    setAiLoopEarlyExitError((err as Error).message);
+                  }
+                }}
+                placeholder={'[\n  "${verify.parsed.all_pass}",\n  "${review.parsed.all_pass}"\n]'}
+                style={{ minHeight: '80px', fontFamily: 'monospace' }}
+              />
+              {aiLoopEarlyExitError && (
+                <p className="text-xs" style={{ color: 'var(--accent-danger)' }}>{aiLoopEarlyExitError}</p>
+              )}
+              <p className="text-xs text-muted mt-1">
+                ALL expressions must be truthy to exit. Each is a single <code>{'${path}'}</code> evaluated for truthiness (empty / <code>false</code> / <code>0</code> / <code>null</code> / <code>undefined</code> are falsy).
+              </p>
+            </div>
+
+            <div className="text-xs text-muted">
+              <strong>Output:</strong> {'{ rounds, earlyExit, steps (last-round results keyed by step.id), history (every round) }'}
+            </div>
+          </>
+        );
+
+      case 'transform':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Output mapping (JSON)</label>
+              <textarea
+                className="form-textarea"
+                value={transformMappingJson}
+                onChange={(e) => {
+                  setTransformMappingJson(e.target.value);
+                  try {
+                    const parsed = JSON.parse(e.target.value);
+                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                      setTransformMappingError('Must be a JSON object');
+                    } else {
+                      setTransformMappingError(null);
+                    }
+                  } catch (err) {
+                    setTransformMappingError((err as Error).message);
+                  }
+                }}
+                placeholder={'{\n  "questions": "${inputData.generator.parsed.questions}",\n  "count": "${inputData.generator.parsed.questions.length}"\n}'}
+                style={{ minHeight: '160px', fontFamily: 'monospace' }}
+              />
+              {transformMappingError && (
+                <p className="text-xs" style={{ color: 'var(--accent-danger)' }}>{transformMappingError}</p>
+              )}
+              <p className="text-xs text-muted mt-1">
+                Each value is interpolated against the same context as <code>inputVars</code>:{' '}
+                <code>{'${inputData.x}'}</code>, <code>{'${nodeId.output.path}'}</code>,{' '}
+                <code>{'${input.fieldName}'}</code>. Result is JSON-parsed when possible so objects/arrays come through as-is.
+              </p>
+            </div>
+            <div className="text-xs text-muted">
+              <strong>Output:</strong> the mapped object — each key becomes a top-level field on this node's output.
+            </div>
+          </>
+        );
+
+      case 'aggregate': {
+        const needsField = ['sum', 'avg', 'min', 'max', 'group-by', 'pick'].includes(aggregateOperation);
+        const isConcat = aggregateOperation === 'concat';
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Input array path</label>
+              <input
+                type="text"
+                className="form-input"
+                value={aggregateInputPath}
+                onChange={(e) => setAggregateInputPath(e.target.value)}
+                placeholder="items"
+              />
+              <p className="text-xs text-muted mt-1">
+                Dot-path into the resolved input. Defaults to <code>items</code> (matches fan-out output). Leave empty if the input itself is the array.
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Operation</label>
+              <select
+                className="form-select"
+                value={aggregateOperation}
+                onChange={(e) => setAggregateOperation(e.target.value as typeof aggregateOperation)}
+              >
+                <option value="count">count — array length</option>
+                <option value="sum">sum — numeric reduction</option>
+                <option value="avg">avg — numeric mean</option>
+                <option value="min">min</option>
+                <option value="max">max</option>
+                <option value="flatten">flatten — array-of-arrays to flat array</option>
+                <option value="group-by">group-by — group items by a field value</option>
+                <option value="pick">pick — extract one field from each item</option>
+                <option value="concat">concat — join values into a string</option>
+              </select>
+            </div>
+            {(needsField || isConcat) && (
+              <div className="form-group">
+                <label className="form-label">
+                  Field path {needsField ? '(required)' : '(optional, defaults to whole item)'}
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={aggregateField}
+                  onChange={(e) => setAggregateField(e.target.value)}
+                  placeholder="parsed.questions.length"
+                />
+                <p className="text-xs text-muted mt-1">
+                  Dot-path into each array element. Example: <code>parsed.usage.totalTokens</code> to sum LLM token usage across fan-out iterations.
+                </p>
+              </div>
+            )}
+            {isConcat && (
+              <div className="form-group">
+                <label className="form-label">Separator</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={aggregateSeparator}
+                  onChange={(e) => setAggregateSeparator(e.target.value)}
+                  placeholder="(empty)"
+                />
+              </div>
+            )}
+            <div className="text-xs text-muted">
+              <strong>Output:</strong> {'{ result, count }'}
+            </div>
+          </>
+        );
+      }
+
+      case 'load-document':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Source path</label>
+              <input
+                type="text"
+                className="form-input"
+                value={loadDocumentSourcePath}
+                onChange={(e) => setLoadDocumentSourcePath(e.target.value)}
+                placeholder="${input.file}"
+              />
+              <p className="text-xs text-muted mt-1">
+                Path to a PDF / PPTX / TXT file. Supports <code>{'${input.file}'}</code> interpolation when the workflow has a file input parameter.
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Max chunk chars</label>
+              <input
+                type="number"
+                className="form-input"
+                value={loadDocumentMaxChunkChars}
+                onChange={(e) => setLoadDocumentMaxChunkChars(Number(e.target.value))}
+                min={0}
+                placeholder="2000"
+              />
+              <p className="text-xs text-muted mt-1">
+                Soft upper bound on per-chunk text length. <code>0</code> disables splitting.
+              </p>
+            </div>
+            <div className="text-xs text-muted">
+              <strong>Output:</strong> {'{ chunks: [{ pageId, text, imagePath }], count }'}
+            </div>
+          </>
+        );
+
+      case 'quiz-output-writer':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Filename</label>
+              <input
+                type="text"
+                className="form-input"
+                value={quizOutputFilename}
+                onChange={(e) => setQuizOutputFilename(e.target.value)}
+                placeholder="quiz.json"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Directory (optional)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={quizOutputDirectory}
+                onChange={(e) => setQuizOutputDirectory(e.target.value)}
+                placeholder="(default: per-execution uploads dir)"
+              />
+            </div>
+            <p className="text-xs text-muted">
+              Expects inputVars <code>questions</code>, <code>sourceFile</code>, <code>focusArea</code>. For general JSON output prefer the <code>json-output-writer</code> node.
+            </p>
+            <div className="text-xs text-muted mt-2">
+              <strong>Output:</strong> {'{ filePath, json }'}
+            </div>
+          </>
+        );
+
+      case 'json-output-writer':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Filename</label>
+              <input
+                type="text"
+                className="form-input"
+                value={jsonOutputFilename}
+                onChange={(e) => setJsonOutputFilename(e.target.value)}
+                placeholder="output.json"
+              />
+              <p className="text-xs text-muted mt-1">
+                File name written under <code>data/uploads/&lt;execution-id&gt;/</code>. Defaults to <code>output.json</code>.
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Directory (optional)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={jsonOutputDirectory}
+                onChange={(e) => setJsonOutputDirectory(e.target.value)}
+                placeholder="(default: per-execution uploads dir)"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Root key (optional)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={jsonOutputRootKey}
+                onChange={(e) => setJsonOutputRootKey(e.target.value)}
+                placeholder="(default: write entire resolved input)"
+              />
+              <p className="text-xs text-muted mt-1">
+                If set, writes only <code>inputData[&lt;rootKey&gt;]</code> instead of the whole resolved input object.
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={jsonOutputPretty}
+                  onChange={(e) => setJsonOutputPretty(e.target.checked)}
+                />
+                Pretty-print (2-space indent)
+              </label>
+            </div>
+            <div className="text-xs text-muted">
+              <strong>Output:</strong> {'{ filePath: string }'}
             </div>
           </>
         );

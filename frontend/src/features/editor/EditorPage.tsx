@@ -17,7 +17,7 @@ import ExecuteDialog from './components/ExecuteDialog';
 import { RunWithInputDialog } from './RunWithInputDialog';
 import { AssistantChatPanel } from '@/features/assistant/AssistantChatPanel';
 import { toast } from '../../shared/stores/toastStore';
-import type { StepType, Execution, WorkflowDefinition } from '../../shared/types/workflow';
+import type { StepType, Execution, WorkflowDefinition, Step, DagNode } from '../../shared/types/workflow';
 import { isV2 } from '../../shared/types/workflow';
 import InputParametersEditor from './components/InputParametersEditor';
 import { DagCanvas } from './dag/DagCanvas';
@@ -67,7 +67,15 @@ function EditorPage() {
   } = useWorkflowStore();
 
   // DAG store
-  const { setGraph: setDagGraph, nodes: dagNodes, edges: dagEdges } = useDagEditorStore();
+  const {
+    setGraph: setDagGraph,
+    nodes: dagNodes,
+    edges: dagEdges,
+    selectedNodeId: dagSelectedNodeId,
+    selectNode: selectDagNode,
+    upsertNode: upsertDagNode,
+    removeNode: removeDagNode,
+  } = useDagEditorStore();
 
   // Input dialog hook
   const { prompt: showInputDialog } = useInput();
@@ -247,6 +255,24 @@ function EditorPage() {
     }
   }, [addStation, showInputDialog]);
 
+  const isV2Workflow = !!currentWorkflow && isV2(currentWorkflow.definition);
+
+  const handleAddDagNode = useCallback((type: StepType) => {
+    const id = 'node-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    // Place new nodes to the right of the existing graph so they don't overlap.
+    const maxX = dagNodes.reduce((m, n) => Math.max(m, n.position?.x ?? 0), 0);
+    const baseY = dagNodes.length > 0 ? (dagNodes[0].position?.y ?? 100) : 100;
+    const newNode: DagNode = {
+      id,
+      name: type,
+      type,
+      position: { x: dagNodes.length === 0 ? 60 : maxX + 260, y: baseY },
+      config: {},
+    };
+    upsertDagNode(newNode);
+    selectDagNode(id);
+  }, [dagNodes, upsertDagNode, selectDagNode]);
+
   const handleAddStep = useCallback(async (stationId: string, type: StepType) => {
     const name = await showInputDialog({
       title: 'Add Step',
@@ -350,6 +376,8 @@ function EditorPage() {
       if (e.key === 'Escape') {
         if (selectedStepId) {
           selectStep(null);
+        } else if (dagSelectedNodeId) {
+          selectDagNode(undefined);
         } else if (selectedStationId) {
           selectStation(null);
         } else if (editorView.type === 'step-view') {
@@ -360,7 +388,7 @@ function EditorPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedStepId, selectedStationId, editorView, selectStep, selectStation, handleBackToStageView]);
+  }, [selectedStepId, selectedStationId, dagSelectedNodeId, editorView, selectStep, selectStation, selectDagNode, handleBackToStageView]);
 
   // Loading state
   if (isLoading && !currentWorkflow) {
@@ -413,7 +441,7 @@ function EditorPage() {
             color: 'var(--text-secondary)',
           }}>
             <Layers size={14} />
-            {editorView.type === 'stage-view' ? 'Stage View' : 'Step View'}
+            {isV2Workflow ? 'DAG View' : editorView.type === 'stage-view' ? 'Stage View' : 'Step View'}
           </div>
 
           {editorView.type === 'step-view' && (
@@ -426,8 +454,16 @@ function EditorPage() {
             </button>
           )}
 
-          {editorView.type === 'stage-view' ? (
-            <button 
+          {isV2Workflow ? (
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowLibrary(!showLibrary)}
+            >
+              <Plus size={18} />
+              Add Node
+            </button>
+          ) : editorView.type === 'stage-view' ? (
+            <button
               className="btn btn-secondary"
               onClick={handleAddStation}
             >
@@ -435,7 +471,7 @@ function EditorPage() {
               Add Stage
             </button>
           ) : (
-            <button 
+            <button
               className="btn btn-secondary"
               onClick={() => setShowLibrary(!showLibrary)}
             >
@@ -535,8 +571,16 @@ function EditorPage() {
 
       {/* Main Editor Area */}
       <div className="flex" style={{ flex: 1, overflow: 'hidden' }}>
-        {/* Node Library Panel (only in Step View, v1 only) */}
-        {showLibrary && editorView.type === 'step-view' && currentStage && (
+        {/* Node Library Panel (Step View for v1; always available for v2) */}
+        {showLibrary && isV2Workflow && (
+          <NodeLibrary
+            onAddStep={handleAddDagNode}
+            stations={[]}
+            onAddStepToStation={() => {}}
+            onClose={() => setShowLibrary(false)}
+          />
+        )}
+        {showLibrary && !isV2Workflow && editorView.type === 'step-view' && currentStage && (
           <NodeLibrary
             onAddStep={(type) => handleAddStep(currentStage.id, type)}
             stations={v1Stations}
@@ -593,6 +637,25 @@ function EditorPage() {
             onClose={() => selectStep(null)}
           />
         )}
+
+        {/* v2 DAG node config panel */}
+        {isV2Workflow && dagSelectedNodeId && currentWorkflow && !(showSimulation && currentExecution?.result) && (() => {
+          const dagNode = dagNodes.find(n => n.id === dagSelectedNodeId);
+          if (!dagNode) return null;
+          // DagNode and Step share the fields NodeConfigPanel reads (name, type,
+          // config, inputVars, outputVars, timeout, retryPolicy). The panel also
+          // reaches into the dag store directly for v2-only fields (fanOut,
+          // errorPolicy), so passing the node as Step is safe.
+          return (
+            <NodeConfigPanel
+              step={dagNode as unknown as Step}
+              workflow={currentWorkflow}
+              onUpdate={(data) => upsertDagNode({ ...dagNode, ...(data as Partial<DagNode>) })}
+              onDelete={() => { removeDagNode(dagNode.id); selectDagNode(undefined); }}
+              onClose={() => selectDagNode(undefined)}
+            />
+          );
+        })()}
 
         {selectedStation && currentWorkflow && editorView.type === 'stage-view' && (
           <StationConfigPanel

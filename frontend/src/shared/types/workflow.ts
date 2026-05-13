@@ -146,7 +146,11 @@ export type StepType =
   | 'ai-agent'
   | 'ai-router'
   | 'load-document'
-  | 'quiz-output-writer';
+  | 'quiz-output-writer'
+  | 'json-output-writer'
+  | 'aggregate'
+  | 'transform'
+  | 'ai-loop';
 
 export interface StepConfig {
   code?: string;
@@ -191,6 +195,38 @@ export interface StepConfig {
   aiTools?: Array<{ type: string; function: { name: string; description: string; parameters: Record<string, any> } }>;
   aiMaxIterations?: number;
   aiRoutes?: Array<{ branchId: string; description: string }>;
+  // load-document
+  loadDocumentSourcePath?: string;
+  loadDocumentMaxChunkChars?: number;
+  // quiz-output-writer
+  quizOutputDirectory?: string;
+  quizOutputFilename?: string;
+  // json-output-writer
+  jsonOutputDirectory?: string;
+  jsonOutputFilename?: string;
+  jsonOutputRootKey?: string;
+  jsonOutputPretty?: boolean;
+  // aggregate
+  aggregateInputPath?: string;
+  aggregateOperation?: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'flatten' | 'group-by' | 'pick' | 'concat';
+  aggregateField?: string;
+  aggregateSeparator?: string;
+  // transform
+  transformMapping?: Record<string, string>;
+  // ai-loop
+  aiLoopRounds?: number;
+  aiLoopSteps?: Array<{
+    id: string;
+    systemTemplate?: string;
+    userTemplate?: string;
+    outputSchema?: Record<string, any>;
+    providerId?: string;
+    providerName?: string;
+    temperature?: number;
+    maxTokens?: number;
+    runWhen?: string;
+  }>;
+  aiLoopEarlyExitWhen?: string[];
 }
 
 export interface VariableMapping {
@@ -318,4 +354,8 @@ export const STEP_TYPE_INFO: Record<StepType, { label: string; icon: string; col
   'ai-router': { label: 'AI Router', icon: '🔀', color: '#7c3aed' },
   'load-document': { label: 'Load Document', icon: '📄', color: '#0ea5e9' },
   'quiz-output-writer': { label: 'Quiz Output Writer', icon: '📝', color: '#10b981' },
+  'json-output-writer': { label: 'JSON Output Writer', icon: '💾', color: '#10b981' },
+  'aggregate': { label: 'Aggregate', icon: '📊', color: '#0891b2' },
+  'transform': { label: 'Transform', icon: '🔄', color: '#0891b2' },
+  'ai-loop': { label: 'AI Loop', icon: '🔁', color: '#a855f7' },
 };

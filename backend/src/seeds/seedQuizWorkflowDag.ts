@@ -1,164 +1,217 @@
 /**
- * EXAMPLE — Document Quiz Generator workflow.
+ * EXAMPLE — Document Quiz Generator workflow (v2 DAG).
  *
  * This is NOT part of the core platform. It's an example workflow that
  * demonstrates how the platform supports multi-agent pipelines, multi-modal
- * AI calls, fan-out across pages, named-port merges, and a feedback loop.
+ * AI calls, named-port merges, and conditional `if-else` branching with an
+ * internal feedback loop.
  *
  * Disable with the env var LOAD_EXAMPLE_QUIZ_WORKFLOW=false at startup.
  *
- * The platform features this example exercises:
- * - load-document step (PDF/PPTX/TXT)
- * - ai-structured-output step with vision-enabled provider
- * - script-js step with sandbox-exposed ai.call helper
- * - fan-out node + named-port merge
- * - quiz-output-writer step (JSON to data/uploads/<exec-id>/quiz.json)
+ * Pipeline shape:
+ *
+ *   load → analyzer → generator
+ *                       │
+ *                       ├──► verifier ──(all_pass)──► collect ──► writer
+ *                       │       │
+ *                       │       └──(has_failures)──► fixer
+ *                       │                              │
+ *                       └──► reviewer ──(all_pass)──► collect
+ *                                │                     ▲
+ *                                └──(has_failures)──► fixer ───┘
+ *
+ * The v2 DAG validator rejects cycles, so the verifier → reviewer → fixer →
+ * verifier loop cannot be expressed as a back-edge. Instead, verifier and
+ * reviewer fire once and route through `if-else` edges based on
+ * `${parsed.all_pass}` / `${parsed.has_failures}`. The fixer is a single
+ * script-js node that internally loops up to 3 rounds, calling fixer +
+ * re-verifier + re-reviewer agents via the in-sandbox `ai.call` helper.
+ *
+ * The `collect` node converges all paths (verifier-pass, reviewer-pass,
+ * fixer-done) into a single questions array consumed by the writer.
  */
 import { v4 as uuidv4 } from 'uuid';
 import { WorkflowModel } from '../models/workflow';
+import { PromptTemplateModel } from '../models/promptTemplateModel';
 
 const QUIZ_WORKFLOW_ID = 'builtin-quiz-generator';
 
-/**
- * Fix-loop orchestrator: reads generator questions plus reviewer/verifier results
- * from named-port inputs, runs up to 3 fix rounds per chunk, then returns merged
- * questions across all chunks.
- *
- * In the DAG shape the generator node fan-outs per chunk and the fix-loop merges:
- *   fix-loop.targetPort.generator  → inputData.generator  (array of {questions:[]})
- *   fix-loop.targetPort.reviewer   → inputData.reviewer   (array of {results:[]})
- *   fix-loop.targetPort.verifier   → inputData.verifier   (array of {results:[]})
- */
-const FIX_LOOP_CODE = `
-// Helper: extract questions from an ai-structured-output result or fan-out items.
-// The ai-structured-output step returns { parsed: { questions: [] }, raw, model, usage }.
-// A fan-out collects per-chunk results in { items: [result, ...] }.
-// variables[node.id].output is set per-chunk (last chunk wins) due to runV2 callback timing,
-// so inputData.generator is the last-chunk result: { parsed: { questions: [] }, ... }
-function extractQuestions(raw) {
-  if (!raw) return [];
-  // Single ai-structured-output result
-  if (raw.parsed && Array.isArray(raw.parsed.questions)) return raw.parsed.questions;
-  // Pre-parsed: { questions: [] }
-  if (Array.isArray(raw.questions)) return raw.questions;
-  // Fan-out aggregate: { items: [{ parsed: { questions: [] } }, ...] }
-  if (Array.isArray(raw.items)) {
-    const out = [];
-    for (const item of raw.items) {
-      const qs = item && item.parsed && Array.isArray(item.parsed.questions) ? item.parsed.questions
-        : item && Array.isArray(item.questions) ? item.questions : [];
-      for (const q of qs) out.push(q);
-    }
-    return out;
-  }
-  return [];
-}
-
-function extractResults(raw) {
-  if (!raw) return [];
-  if (raw.parsed && Array.isArray(raw.parsed.results)) return raw.parsed.results;
-  if (Array.isArray(raw.results)) return raw.results;
-  return [];
-}
-
-const genRaw = inputData.generator || {};
-const revRaw = inputData.reviewer  || {};
-const verRaw = inputData.verifier  || {};
-
-// Flat reviewer/verifier results shared across all chunks (single-pass DAG nodes)
-const sharedReviewerResults = extractResults(revRaw);
-const sharedVerifierResults = extractResults(verRaw);
-
-const focusArea         = variables.input?.focus_area          || 'concept and logic, not usage or default values';
-const questionsPerChunk = Number(variables.input?.questions_per_chunk || 3);
-
-const all = [];
-
-// Collect all questions from generator (handles both fan-out and single-chunk cases)
-let questions = extractQuestions(genRaw);
-
-// --- Per-question review loop ---
-{
-  let i = 0; // dummy block for single-chunk flow
-  const _ = i;
-
-  // Use pre-computed reviewer/verifier results for the first round (shared across chunks)
-  let reviewerResults = sharedReviewerResults;
-  let verifierResults = sharedVerifierResults;
-
-  const chunkCtx = {
-    input: {
-      ...variables.input,
-      focus_area: focusArea,
-      questions_per_chunk: questionsPerChunk,
+// JSON schema reused by verifier and reviewer. Requiring `all_pass` and
+// `has_failures` at the top level lets edge `when` expressions like
+// `${parsed.all_pass}` and `${parsed.has_failures}` evaluate without
+// touching the per-question results array.
+const PASS_FAIL_SCHEMA = {
+  type: 'object',
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          question_index: { type: 'number' },
+          pass: { type: 'boolean' },
+          issue: { type: ['string', 'null'] },
+        },
+        required: ['question_index', 'pass'],
+      },
     },
-  };
+    all_pass: { type: 'boolean' },
+    has_failures: { type: 'boolean' },
+  },
+  required: ['results', 'all_pass', 'has_failures'],
+};
 
-  for (let round = 1; round <= 3; round++) {
-    if (round > 1) {
-      // Re-run reviewer/verifier in subsequent rounds via ai.call
-      const reviewer = await ai.call({
-        systemTemplate: 'quiz-reviewer-system',
-        userTemplate: 'quiz-reviewer-system',
-        context: { ...chunkCtx, input: { ...chunkCtx.input, questions } },
-        outputSchema: { type: 'object', properties: { results: { type: 'array' } }, required: ['results'] },
-      });
-      reviewerResults = reviewer.parsed.results || [];
+const ANALYZER_SCHEMA = {
+  type: 'object',
+  properties: {
+    refined_focus: { type: 'string' },
+    must_cover: { type: 'array', items: { type: 'string' } },
+    avoid: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['refined_focus', 'must_cover', 'avoid'],
+};
 
-      const verifier = await ai.call({
-        systemTemplate: 'quiz-verifier-system',
-        userTemplate: 'quiz-verifier-system',
-        context: { ...chunkCtx, input: { ...chunkCtx.input, questions } },
-        outputSchema: { type: 'object', properties: { results: { type: 'array' } }, required: ['results'] },
-      });
-      verifierResults = verifier.parsed.results || [];
-    }
+const GENERATOR_SCHEMA = {
+  type: 'object',
+  properties: {
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          reference_page: { type: 'string' },
+          question: { type: 'string' },
+          options: { type: 'array', items: { type: 'string' } },
+          answer: { type: 'string' },
+          explanation: { type: 'string' },
+        },
+        required: ['question', 'options', 'answer', 'explanation'],
+      },
+    },
+  },
+  required: ['questions'],
+};
 
-    const flagged = [];
-    for (const r of reviewerResults) if (!r.pass) flagged.push({ ...r, source: 'reviewer' });
-    for (const r of verifierResults) if (!r.pass) flagged.push({ ...r, source: 'verifier' });
-    if (flagged.length === 0) break;
+const FIXER_SCHEMA = {
+  type: 'object',
+  properties: { fixed_questions: { type: 'array' } },
+  required: ['fixed_questions'],
+};
 
-    const fixer = await ai.call({
-      systemTemplate: 'quiz-fixer-system',
-      userTemplate: 'quiz-fixer-system',
-      context: { ...chunkCtx, input: { ...chunkCtx.input, questions, issues: flagged, mode: round === 1 ? 'surgical' : 'auto' } },
-      outputSchema: { type: 'object', properties: { fixed_questions: { type: 'array' } }, required: ['fixed_questions'] },
-    });
-    questions = (fixer.parsed.fixed_questions || []).map(q => ({
-      reference_page: q.reference_page,
-      question: q.question,
-      options: q.options,
-      answer: q.answer,
-      explanation: q.explanation,
-    }));
+/**
+ * Fix-loop orchestrator. Receives initial generator questions plus the first-
+ * pass verifier and reviewer results via inputVars, then iterates up to 3
+ * rounds of fix → re-verify → re-review. Stops early when both gates pass.
+ */
+const FIXER_LOOP_CODE = `
+const focusArea  = inputData.focusArea  || variables.input?.focus_area || '';
+const mustCover  = Array.isArray(inputData.mustCover) ? inputData.mustCover : [];
+const avoid      = Array.isArray(inputData.avoid)     ? inputData.avoid     : [];
 
-    if (round === 3 && flagged.length > 0) {
-      for (const f of flagged) {
-        if (questions[f.question_index]) {
-          questions[f.question_index].quality_warnings = questions[f.question_index].quality_warnings || [];
-          questions[f.question_index].quality_warnings.push(\`\${f.source}: \${f.issue}\`);
-        }
-      }
-    }
-  }
+let questions = Array.isArray(inputData.generatorQuestions) ? [...inputData.generatorQuestions] : [];
+let verifierResults = (inputData.verifierOutput && Array.isArray(inputData.verifierOutput.results)) ? inputData.verifierOutput.results : [];
+let reviewerResults = (inputData.reviewerOutput && Array.isArray(inputData.reviewerOutput.results)) ? inputData.reviewerOutput.results : [];
 
-  for (const q of questions) all.push(q);
+const baseCtx = {
+  input: {
+    ...variables.input,
+    focus_area: focusArea,
+    must_cover: mustCover,
+    avoid,
+  },
+};
+
+let roundsUsed = 0;
+for (let round = 1; round <= 3; round++) {
+  const flagged = [];
+  for (const r of verifierResults) if (r && r.pass === false) flagged.push({ ...r, source: 'verifier' });
+  for (const r of reviewerResults) if (r && r.pass === false) flagged.push({ ...r, source: 'reviewer' });
+  if (flagged.length === 0) break;
+  roundsUsed = round;
+
+  const fixer = await ai.call({
+    systemTemplate: 'quiz-fixer-system',
+    userTemplate: 'quiz-fixer-system',
+    context: {
+      ...baseCtx,
+      input: {
+        ...baseCtx.input,
+        questions,
+        issues: flagged,
+        mode: round === 1 ? 'surgical' : 'auto',
+      },
+    },
+    outputSchema: ${JSON.stringify(FIXER_SCHEMA)},
+  });
+  questions = (fixer.parsed?.fixed_questions || []).map(q => ({
+    reference_page: q.reference_page,
+    question: q.question,
+    options: q.options,
+    answer: q.answer,
+    explanation: q.explanation,
+  }));
+
+  // No point re-running the gates on the last allowed round.
+  if (round === 3) break;
+
+  const verifier = await ai.call({
+    systemTemplate: 'quiz-verifier-system',
+    userTemplate: 'quiz-verifier-system',
+    context: { ...baseCtx, input: { ...baseCtx.input, questions } },
+    outputSchema: ${JSON.stringify(PASS_FAIL_SCHEMA)},
+  });
+  verifierResults = verifier.parsed?.results || [];
+
+  const reviewer = await ai.call({
+    systemTemplate: 'quiz-reviewer-system',
+    userTemplate: 'quiz-reviewer-system',
+    context: { ...baseCtx, input: { ...baseCtx.input, questions } },
+    outputSchema: ${JSON.stringify(PASS_FAIL_SCHEMA)},
+  });
+  reviewerResults = reviewer.parsed?.results || [];
+
+  if (verifier.parsed?.all_pass && reviewer.parsed?.all_pass) break;
 }
 
-variables.allQuestions = all;
-return { questions: all, count: all.length };
+return { questions, rounds_used: roundsUsed };
+`;
+
+/**
+ * Convergence node. The three paths into here are mutually exclusive at the
+ * data level: the fixer only ran if at least one gate failed, in which case
+ * its questions array is authoritative. Otherwise the generator's questions
+ * already passed both gates.
+ */
+const COLLECT_CODE = `
+const fixed = Array.isArray(inputData.fixerQuestions) ? inputData.fixerQuestions : null;
+if (fixed && fixed.length) return { questions: fixed };
+const raw = Array.isArray(inputData.generatorQuestions) ? inputData.generatorQuestions : [];
+return { questions: raw };
 `;
 
 export function seedQuizWorkflowDag(): void {
   const existing = WorkflowModel.getById(QUIZ_WORKFLOW_ID);
-  // Skip ONLY if already in the new DAG shape with identifying nodes (idempotent).
+  // Skip ONLY if already in the new shape (idempotent re-seed on restart).
   if (existing) {
     const def: any = existing.definition;
-    if (def?.schemaVersion === 2 && Array.isArray(def?.nodes) && def.nodes.some((n: any) => n.id === 'generator')) {
+    if (def?.schemaVersion === 2 && Array.isArray(def?.nodes) && def.nodes.some((n: any) => n.id === 'analyzer')) {
       return;
     }
   }
+
+  // Look up template IDs by name so the AI nodes pull the seeded system
+  // prompts from the prompt library. seedPromptTemplates() runs immediately
+  // before this in index.ts, so these are guaranteed to exist.
+  const tplId = (name: string) => PromptTemplateModel.getByName(name)?.id;
+  const analyzerTpl = tplId('quiz-doc-analyzer-system');
+  const generatorTpl = tplId('quiz-generator-system');
+  const verifierTpl = tplId('quiz-verifier-system');
+  const reviewerTpl = tplId('quiz-reviewer-system');
+
+  // Pixel coordinates so React Flow lays the nodes out as a proper graph.
+  // Grid coords like (0,0)/(1,0) used to collapse on top of each other.
+  const COL = 280;
+  const ROW = 140;
 
   const def: any = {
     schemaVersion: 2,
@@ -172,91 +225,134 @@ export function seedQuizWorkflowDag(): void {
         id: 'load',
         name: 'Load document',
         type: 'load-document',
-        position: { x: 0, y: 0 },
+        position: { x: 0, y: ROW },
         config: {
           loadDocumentSourcePath: '${input.file}',
           loadDocumentMaxChunkChars: 2000,
         },
       },
       {
+        id: 'analyzer',
+        name: 'Analyze focus area',
+        type: 'ai-structured-output',
+        position: { x: COL, y: ROW },
+        config: {
+          aiPromptTemplateSystemId: analyzerTpl,
+          aiPrompt: 'User focus area: ${input.focus_area}\n\nDocument sample (first chunk):\n${inputData.firstChunkText}',
+          aiOutputSchema: ANALYZER_SCHEMA,
+        },
+        inputVars: [
+          { name: 'firstChunkText', source: '${load.output.chunks.0.text}' },
+        ],
+      },
+      {
         id: 'generator',
         name: 'Generate questions',
         type: 'ai-structured-output',
-        position: { x: 1, y: 0 },
+        position: { x: COL * 2, y: ROW },
         config: {
-          aiSystemPrompt: 'Use the quiz-generator-system template via inputs.',
-          aiPrompt: '${chunks}',
-          aiOutputSchema: { type: 'object', properties: { questions: { type: 'array' } } },
+          aiPromptTemplateSystemId: generatorTpl,
+          aiPrompt: '${inputData.chunks}',
+          aiOutputSchema: GENERATOR_SCHEMA,
         },
-        fanOut: { enabled: true, inputArrayPath: 'chunks' },
-      },
-      {
-        id: 'reviewer',
-        name: 'Review focus-area',
-        type: 'ai-structured-output',
-        position: { x: 2, y: 0 },
-        config: {
-          aiSystemPrompt: 'Reviewer.',
-          aiPrompt: '${generator.questions}',
-          aiOutputSchema: { type: 'object', properties: { results: { type: 'array' } } },
-        },
+        inputVars: [
+          { name: 'chunks', source: '${load.output.chunks}' },
+          { name: 'refined_focus', source: '${analyzer.output.parsed.refined_focus}' },
+          { name: 'must_cover', source: '${analyzer.output.parsed.must_cover}' },
+          { name: 'avoid', source: '${analyzer.output.parsed.avoid}' },
+        ],
       },
       {
         id: 'verifier',
         name: 'Verify grounding',
         type: 'ai-structured-output',
-        position: { x: 2, y: 1 },
+        position: { x: COL * 3, y: 0 },
         config: {
-          aiSystemPrompt: 'Verifier.',
-          aiPrompt: '${generator.questions}',
-          aiOutputSchema: { type: 'object', properties: { results: { type: 'array' } } },
+          aiPromptTemplateSystemId: verifierTpl,
+          aiPrompt: '${inputData.questions}',
+          aiOutputSchema: PASS_FAIL_SCHEMA,
         },
+        inputVars: [
+          { name: 'questions', source: '${generator.output.parsed.questions}' },
+          { name: 'focus_area', source: '${analyzer.output.parsed.refined_focus}' },
+          { name: 'must_cover', source: '${analyzer.output.parsed.must_cover}' },
+          { name: 'avoid', source: '${analyzer.output.parsed.avoid}' },
+        ],
       },
       {
-        id: 'fix-loop',
-        name: 'Fix flagged + retry',
-        type: 'script-js',
-        position: { x: 3, y: 0 },
-        config: { code: FIX_LOOP_CODE },
-        // inputVars expose the generator/reviewer/verifier outputs as inputData fields.
-        // After each node runs, runV2 sets variables[node.id] = { output: r.output }.
+        id: 'reviewer',
+        name: 'Review focus coverage',
+        type: 'ai-structured-output',
+        position: { x: COL * 3, y: ROW * 2 },
+        config: {
+          aiPromptTemplateSystemId: reviewerTpl,
+          aiPrompt: '${inputData.questions}',
+          aiOutputSchema: PASS_FAIL_SCHEMA,
+        },
         inputVars: [
-          { name: 'generator', source: '${generator.output}' },
-          { name: 'reviewer',  source: '${reviewer.output}' },
-          { name: 'verifier',  source: '${verifier.output}' },
+          { name: 'questions', source: '${generator.output.parsed.questions}' },
+          { name: 'focus_area', source: '${analyzer.output.parsed.refined_focus}' },
+          { name: 'must_cover', source: '${analyzer.output.parsed.must_cover}' },
+          { name: 'avoid', source: '${analyzer.output.parsed.avoid}' },
+        ],
+      },
+      {
+        id: 'fixer',
+        name: 'Fix flagged + retry (up to 3)',
+        type: 'script-js',
+        position: { x: COL * 4, y: ROW },
+        config: { code: FIXER_LOOP_CODE },
+        inputVars: [
+          { name: 'generatorQuestions', source: '${generator.output.parsed.questions}' },
+          { name: 'verifierOutput', source: '${verifier.output.parsed}' },
+          { name: 'reviewerOutput', source: '${reviewer.output.parsed}' },
+          { name: 'focusArea', source: '${analyzer.output.parsed.refined_focus}' },
+          { name: 'mustCover', source: '${analyzer.output.parsed.must_cover}' },
+          { name: 'avoid', source: '${analyzer.output.parsed.avoid}' },
         ],
       },
       {
         id: 'collect',
-        name: 'Collect questions',
+        name: 'Collect final questions',
         type: 'script-js',
-        position: { x: 4, y: 0 },
-        config: {
-          // fix-loop sets variables.allQuestions; collect reads from there directly.
-          code: "const qs = variables.allQuestions || []; return { questions: qs };",
-        },
+        position: { x: COL * 5, y: ROW },
+        config: { code: COLLECT_CODE },
+        inputVars: [
+          { name: 'fixerQuestions', source: '${fixer.output.questions}' },
+          { name: 'generatorQuestions', source: '${generator.output.parsed.questions}' },
+        ],
       },
       {
         id: 'writer',
         name: 'Write quiz JSON',
         type: 'quiz-output-writer',
-        position: { x: 5, y: 0 },
+        position: { x: COL * 6, y: ROW },
         config: { quizOutputFilename: 'quiz.json' },
         inputVars: [
-          { name: 'questions', source: '${allQuestions}' },
+          { name: 'questions', source: '${collect.output.questions}' },
           { name: 'sourceFile', source: '${input.file}' },
-          { name: 'focusArea', source: '${input.focus_area}' },
+          { name: 'focusArea', source: '${analyzer.output.parsed.refined_focus}' },
         ],
       },
     ],
     edges: [
-      { id: uuidv4(), source: 'load', target: 'generator' },
-      { id: uuidv4(), source: 'generator', target: 'reviewer' },
+      { id: uuidv4(), source: 'load', target: 'analyzer' },
+      { id: uuidv4(), source: 'analyzer', target: 'generator' },
       { id: uuidv4(), source: 'generator', target: 'verifier' },
-      { id: uuidv4(), source: 'generator', target: 'fix-loop', targetPort: 'generator' },
-      { id: uuidv4(), source: 'reviewer', target: 'fix-loop', targetPort: 'reviewer' },
-      { id: uuidv4(), source: 'verifier', target: 'fix-loop', targetPort: 'verifier' },
-      { id: uuidv4(), source: 'fix-loop', target: 'collect' },
+      { id: uuidv4(), source: 'generator', target: 'reviewer' },
+
+      // verifier branches: pass → collect, fail → fixer.
+      { id: uuidv4(), source: 'verifier', target: 'collect', when: '${parsed.all_pass}' },
+      { id: uuidv4(), source: 'verifier', target: 'fixer',   when: '${parsed.has_failures}' },
+
+      // reviewer branches: pass → collect, fail → fixer.
+      { id: uuidv4(), source: 'reviewer', target: 'collect', when: '${parsed.all_pass}' },
+      { id: uuidv4(), source: 'reviewer', target: 'fixer',   when: '${parsed.has_failures}' },
+
+      // Fixer runs only if at least one gate failed; mergeMode 'all' (default)
+      // means it auto-skips when both inbound edges resolve without firing.
+      { id: uuidv4(), source: 'fixer', target: 'collect' },
+
       { id: uuidv4(), source: 'collect', target: 'writer' },
     ],
   };
@@ -267,7 +363,7 @@ export function seedQuizWorkflowDag(): void {
     WorkflowModel.create({
       id: QUIZ_WORKFLOW_ID,
       name: 'Document Quiz Generator (example)',
-      description: 'Generate a JSON quiz from a PDF/PPTX/TXT via a multi-agent feedback loop (DAG).',
+      description: 'Generate a JSON quiz from a PDF/PPTX/TXT via a multi-agent pipeline with if-else gates and an iterative fixer.',
       status: 'active',
       definition: def,
     } as any);

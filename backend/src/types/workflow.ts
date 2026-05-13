@@ -92,7 +92,11 @@ export type StepType =
   | 'ai-agent'
   | 'ai-router'
   | 'load-document'
-  | 'quiz-output-writer';
+  | 'quiz-output-writer'
+  | 'json-output-writer'
+  | 'aggregate'
+  | 'transform'
+  | 'ai-loop';
 
 export interface StepConfig {
   // Script nodes
@@ -165,6 +169,40 @@ export interface StepConfig {
   // quiz-output-writer step
   quizOutputDirectory?: string;
   quizOutputFilename?: string;
+
+  // json-output-writer step — generic JSON file writer. Serializes the node's
+  // resolved inputVars (or a single named root) to a file under the uploads dir.
+  jsonOutputDirectory?: string;
+  jsonOutputFilename?: string;
+  jsonOutputRootKey?: string;  // if set, writes inputData[rootKey] instead of the whole inputData
+  jsonOutputPretty?: boolean;  // default true (2-space indented)
+
+  // aggregate step — collapses an input array via a chosen operation.
+  aggregateInputPath?: string;  // dot-path into inputData; default 'items' (matches fan-out output)
+  aggregateOperation?: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'flatten' | 'group-by' | 'pick' | 'concat';
+  aggregateField?: string;      // dot-path into each item, required for sum/avg/min/max/group-by/pick
+  aggregateSeparator?: string;  // used by concat (default '')
+
+  // transform step — declarative JSON shaper. Each output key maps to a
+  // `${path}`-interpolated source expression, resolved against the same
+  // context inputVars uses.
+  transformMapping?: Record<string, string>;
+
+  // ai-loop step — sequenced-template loop. Each round runs every inner step
+  // in order; the loop exits early when all earlyExitWhen expressions are truthy.
+  aiLoopRounds?: number;
+  aiLoopSteps?: Array<{
+    id: string;
+    systemTemplate?: string;       // prompt template name
+    userTemplate?: string;
+    outputSchema?: Record<string, any>;
+    providerId?: string;
+    providerName?: string;
+    temperature?: number;
+    maxTokens?: number;
+    runWhen?: string;              // optional `${path}` — skip step in a round when falsy
+  }>;
+  aiLoopEarlyExitWhen?: string[];  // array of `${path}` expressions; ALL must be truthy to exit
 }
 
 export interface VariableMapping {
