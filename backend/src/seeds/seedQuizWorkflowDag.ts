@@ -189,12 +189,21 @@ const raw = Array.isArray(inputData.generatorQuestions) ? inputData.generatorQue
 return { questions: raw };
 `;
 
+// Bump when changing the seeded layout / node ids / edges so existing DB rows
+// get refreshed on the next startup. Increment when default positions change.
+const QUIZ_LAYOUT_VERSION = 2;
+
 export function seedQuizWorkflowDag(): void {
   const existing = WorkflowModel.getById(QUIZ_WORKFLOW_ID);
-  // Skip ONLY if already in the new shape (idempotent re-seed on restart).
+  // Skip ONLY if already in the new shape AND at the current layout version.
   if (existing) {
     const def: any = existing.definition;
-    if (def?.schemaVersion === 2 && Array.isArray(def?.nodes) && def.nodes.some((n: any) => n.id === 'analyzer')) {
+    if (
+      def?.schemaVersion === 2 &&
+      Array.isArray(def?.nodes) &&
+      def.nodes.some((n: any) => n.id === 'analyzer') &&
+      def.layoutVersion === QUIZ_LAYOUT_VERSION
+    ) {
       return;
     }
   }
@@ -208,13 +217,15 @@ export function seedQuizWorkflowDag(): void {
   const verifierTpl = tplId('quiz-verifier-system');
   const reviewerTpl = tplId('quiz-reviewer-system');
 
-  // Pixel coordinates so React Flow lays the nodes out as a proper graph.
-  // Grid coords like (0,0)/(1,0) used to collapse on top of each other.
-  const COL = 280;
-  const ROW = 140;
+  // Top-to-bottom layout: nodes stacked vertically along a center column,
+  // with verifier and reviewer rendered side-by-side at the same y.
+  // React Flow's default handles are top (target) and bottom (source).
+  const COL = 280; // horizontal column step
+  const ROW = 140; // vertical row step
 
   const def: any = {
     schemaVersion: 2,
+    layoutVersion: QUIZ_LAYOUT_VERSION,
     inputParameters: [
       { name: 'file', type: 'file', accept: '.pdf,.pptx,.txt', required: true, description: 'Source document' },
       { name: 'focus_area', type: 'string', defaultValue: 'concept and logic, not usage or default values' },
@@ -225,7 +236,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'load',
         name: 'Load document',
         type: 'load-document',
-        position: { x: 0, y: ROW },
+        position: { x: COL, y: 0 },
         config: {
           loadDocumentSourcePath: '${input.file}',
           loadDocumentMaxChunkChars: 2000,
@@ -235,7 +246,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'analyzer',
         name: 'Analyze focus area',
         type: 'ai-structured-output',
-        position: { x: COL, y: ROW },
+        position: { x: COL, y: ROW },     // row 1
         config: {
           aiPromptTemplateSystemId: analyzerTpl,
           aiPrompt: 'User focus area: ${input.focus_area}\n\nDocument sample (first chunk):\n${inputData.firstChunkText}',
@@ -249,7 +260,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'generator',
         name: 'Generate questions',
         type: 'ai-structured-output',
-        position: { x: COL * 2, y: ROW },
+        position: { x: COL, y: ROW * 2 }, // row 2
         config: {
           aiPromptTemplateSystemId: generatorTpl,
           aiPrompt: '${inputData.chunks}',
@@ -266,7 +277,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'verifier',
         name: 'Verify grounding',
         type: 'ai-structured-output',
-        position: { x: COL * 3, y: 0 },
+        position: { x: 0, y: ROW * 3 },   // row 3, left branch
         config: {
           aiPromptTemplateSystemId: verifierTpl,
           aiPrompt: '${inputData.questions}',
@@ -283,7 +294,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'reviewer',
         name: 'Review focus coverage',
         type: 'ai-structured-output',
-        position: { x: COL * 3, y: ROW * 2 },
+        position: { x: COL * 2, y: ROW * 3 }, // row 3, right branch
         config: {
           aiPromptTemplateSystemId: reviewerTpl,
           aiPrompt: '${inputData.questions}',
@@ -300,7 +311,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'fixer',
         name: 'Fix flagged + retry (up to 3)',
         type: 'script-js',
-        position: { x: COL * 4, y: ROW },
+        position: { x: COL, y: ROW * 4 }, // row 4
         config: { code: FIXER_LOOP_CODE },
         inputVars: [
           { name: 'generatorQuestions', source: '${generator.output.parsed.questions}' },
@@ -315,7 +326,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'collect',
         name: 'Collect final questions',
         type: 'script-js',
-        position: { x: COL * 5, y: ROW },
+        position: { x: COL, y: ROW * 5 }, // row 5
         config: { code: COLLECT_CODE },
         inputVars: [
           { name: 'fixerQuestions', source: '${fixer.output.questions}' },
@@ -326,7 +337,7 @@ export function seedQuizWorkflowDag(): void {
         id: 'writer',
         name: 'Write quiz JSON',
         type: 'quiz-output-writer',
-        position: { x: COL * 6, y: ROW },
+        position: { x: COL, y: ROW * 6 }, // row 6
         config: { quizOutputFilename: 'quiz.json' },
         inputVars: [
           { name: 'questions', source: '${collect.output.questions}' },
