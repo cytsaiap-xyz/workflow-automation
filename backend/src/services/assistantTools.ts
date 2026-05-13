@@ -19,6 +19,7 @@ const NODE_DOCS: Record<string, string> = {
   'load-document': 'Reads a PDF/PPTX/TXT file. Output: { chunks: [{ pageId, text, imagePath }] }.',
   'quiz-output-writer': 'Writes the assembled quiz JSON to data/uploads/<execution-id>/quiz.json.',
   'json-output-writer': 'Writes the resolved inputVars (or a single named root key) as JSON to data/uploads/<execution-id>/<filename>. Config: jsonOutputFilename, jsonOutputRootKey, jsonOutputPretty.',
+  'aggregate': 'Reduces an input array via count/sum/avg/min/max/flatten/group-by/pick/concat. Config: aggregateInputPath (default "items"), aggregateOperation, aggregateField, aggregateSeparator. Output: { result, count }.',
   'script-js': 'Executes JavaScript in a sandboxed VM (no setTimeout, no fetch, no require).',
   'script-python': 'Executes Python in a child subprocess (input via stdin, output via stdout).',
   'http-request': 'Outbound HTTP. URL must be on the HTTP_ALLOWLIST.',
@@ -33,6 +34,7 @@ const STEP_TYPES = [
   'notification-slack', 'action-email', 'action-slack', 'connector-db',
   'ai-prompt', 'ai-structured-output', 'ai-agent', 'ai-router',
   'load-document', 'quiz-output-writer', 'json-output-writer',
+  'aggregate',
 ];
 
 export const ASSISTANT_TOOL_SCHEMAS = [

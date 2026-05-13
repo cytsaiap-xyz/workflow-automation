@@ -79,6 +79,12 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
   const [jsonOutputRootKey, setJsonOutputRootKey] = useState(step.config.jsonOutputRootKey || '');
   const [jsonOutputPretty, setJsonOutputPretty] = useState(step.config.jsonOutputPretty !== false);
 
+  // aggregate fields
+  const [aggregateInputPath, setAggregateInputPath] = useState(step.config.aggregateInputPath || 'items');
+  const [aggregateOperation, setAggregateOperation] = useState(step.config.aggregateOperation || 'count');
+  const [aggregateField, setAggregateField] = useState(step.config.aggregateField || '');
+  const [aggregateSeparator, setAggregateSeparator] = useState(step.config.aggregateSeparator || '');
+
   // Picker state
   const [activePicker, setActivePicker] = useState<string | null>(null);
 
@@ -145,6 +151,10 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
     setJsonOutputDirectory(step.config.jsonOutputDirectory || '');
     setJsonOutputRootKey(step.config.jsonOutputRootKey || '');
     setJsonOutputPretty(step.config.jsonOutputPretty !== false);
+    setAggregateInputPath(step.config.aggregateInputPath || 'items');
+    setAggregateOperation(step.config.aggregateOperation || 'count');
+    setAggregateField(step.config.aggregateField || '');
+    setAggregateSeparator(step.config.aggregateSeparator || '');
   }, [step]);
 
   const handleSave = () => {
@@ -245,6 +255,12 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         config.jsonOutputDirectory = jsonOutputDirectory.trim() || undefined;
         config.jsonOutputRootKey = jsonOutputRootKey.trim() || undefined;
         config.jsonOutputPretty = jsonOutputPretty;
+        break;
+      case 'aggregate':
+        config.aggregateInputPath = aggregateInputPath.trim() || undefined;
+        config.aggregateOperation = aggregateOperation;
+        config.aggregateField = aggregateField.trim() || undefined;
+        config.aggregateSeparator = aggregateSeparator || undefined;
         break;
     }
 
@@ -1200,6 +1216,78 @@ print(json.dumps({'result': result}))`}
             </div>
           </>
         );
+
+      case 'aggregate': {
+        const needsField = ['sum', 'avg', 'min', 'max', 'group-by', 'pick'].includes(aggregateOperation);
+        const isConcat = aggregateOperation === 'concat';
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Input array path</label>
+              <input
+                type="text"
+                className="form-input"
+                value={aggregateInputPath}
+                onChange={(e) => setAggregateInputPath(e.target.value)}
+                placeholder="items"
+              />
+              <p className="text-xs text-muted mt-1">
+                Dot-path into the resolved input. Defaults to <code>items</code> (matches fan-out output). Leave empty if the input itself is the array.
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Operation</label>
+              <select
+                className="form-select"
+                value={aggregateOperation}
+                onChange={(e) => setAggregateOperation(e.target.value as typeof aggregateOperation)}
+              >
+                <option value="count">count — array length</option>
+                <option value="sum">sum — numeric reduction</option>
+                <option value="avg">avg — numeric mean</option>
+                <option value="min">min</option>
+                <option value="max">max</option>
+                <option value="flatten">flatten — array-of-arrays to flat array</option>
+                <option value="group-by">group-by — group items by a field value</option>
+                <option value="pick">pick — extract one field from each item</option>
+                <option value="concat">concat — join values into a string</option>
+              </select>
+            </div>
+            {(needsField || isConcat) && (
+              <div className="form-group">
+                <label className="form-label">
+                  Field path {needsField ? '(required)' : '(optional, defaults to whole item)'}
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={aggregateField}
+                  onChange={(e) => setAggregateField(e.target.value)}
+                  placeholder="parsed.questions.length"
+                />
+                <p className="text-xs text-muted mt-1">
+                  Dot-path into each array element. Example: <code>parsed.usage.totalTokens</code> to sum LLM token usage across fan-out iterations.
+                </p>
+              </div>
+            )}
+            {isConcat && (
+              <div className="form-group">
+                <label className="form-label">Separator</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={aggregateSeparator}
+                  onChange={(e) => setAggregateSeparator(e.target.value)}
+                  placeholder="(empty)"
+                />
+              </div>
+            )}
+            <div className="text-xs text-muted">
+              <strong>Output:</strong> {'{ result, count }'}
+            </div>
+          </>
+        );
+      }
 
       case 'json-output-writer':
         return (

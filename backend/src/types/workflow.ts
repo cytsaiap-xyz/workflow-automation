@@ -93,7 +93,8 @@ export type StepType =
   | 'ai-router'
   | 'load-document'
   | 'quiz-output-writer'
-  | 'json-output-writer';
+  | 'json-output-writer'
+  | 'aggregate';
 
 export interface StepConfig {
   // Script nodes
@@ -173,6 +174,12 @@ export interface StepConfig {
   jsonOutputFilename?: string;
   jsonOutputRootKey?: string;  // if set, writes inputData[rootKey] instead of the whole inputData
   jsonOutputPretty?: boolean;  // default true (2-space indented)
+
+  // aggregate step — collapses an input array via a chosen operation.
+  aggregateInputPath?: string;  // dot-path into inputData; default 'items' (matches fan-out output)
+  aggregateOperation?: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'flatten' | 'group-by' | 'pick' | 'concat';
+  aggregateField?: string;      // dot-path into each item, required for sum/avg/min/max/group-by/pick
+  aggregateSeparator?: string;  // used by concat (default '')
 }
 
 export interface VariableMapping {

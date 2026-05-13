@@ -303,6 +303,29 @@ export class StepExecutor {
         }
       }
 
+      case 'aggregate': {
+        const { aggregate } = await import('./aggregator');
+        try {
+          const path = step.config.aggregateInputPath?.trim() || 'items';
+          // dot-path into resolvedInput; allow a top-level direct array via empty string.
+          const arr = path
+            ? path.split('.').reduce<any>((acc, p) => acc?.[p], resolvedInput)
+            : resolvedInput;
+          const out = aggregate(arr, {
+            operation: step.config.aggregateOperation || 'count',
+            field: step.config.aggregateField,
+            separator: step.config.aggregateSeparator,
+          });
+          return {
+            success: true,
+            output: out,
+            logs: [`aggregate ${step.config.aggregateOperation || 'count'} over ${out.count} item(s)`],
+          };
+        } catch (e: any) {
+          return { success: false, error: `aggregate failed: ${e.message}`, logs: [] };
+        }
+      }
+
       case 'json-output-writer': {
         const { writeJsonOutput } = await import('./jsonOutputWriter');
         try {
