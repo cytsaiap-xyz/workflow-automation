@@ -5,7 +5,16 @@ import type { InputParameter } from '../../../shared/types/workflow';
 interface Props {
   parameters: InputParameter[];
   mode: 'execute' | 'simulate';
-  onSubmit: (inputData: Record<string, any>) => void;
+  /**
+   * Called when the user clicks the run/simulate button.
+   *
+   * If any of the workflow's input parameters has type 'file' AND the user
+   * selected a real File for it, the callback receives a FormData (multipart).
+   * Otherwise it receives a plain inputData object (JSON path).
+   *
+   * The caller decides which API endpoint to hit based on this shape.
+   */
+  onSubmit: (inputData: Record<string, any> | FormData) => void;
   onCancel: () => void;
 }
 
@@ -21,11 +30,18 @@ export default function ExecuteDialog({ parameters, mode, onSubmit, onCancel }: 
     }
     return initial;
   });
+  const [files, setFiles] = useState<Record<string, File>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const validate = useCallback(() => {
     const newErrors: Record<string, string> = {};
     for (const param of parameters) {
+      if (param.type === 'file') {
+        if (param.required && !files[param.name]) {
+          newErrors[param.name] = `${param.name} is required`;
+        }
+        continue;
+      }
       if (param.required && (values[param.name] === undefined || values[param.name] === '')) {
         newErrors[param.name] = `${param.name} is required`;
       }
@@ -39,10 +55,30 @@ export default function ExecuteDialog({ parameters, mode, onSubmit, onCancel }: 
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [parameters, values]);
+  }, [parameters, values, files]);
 
   const handleSubmit = useCallback(() => {
     if (!validate()) return;
+
+    const hasFiles = parameters.some((p) => p.type === 'file' && files[p.name]);
+
+    if (hasFiles) {
+      // Multipart path: FormData lets the backend route the upload through multer.
+      const fd = new FormData();
+      for (const param of parameters) {
+        if (param.type === 'file') {
+          const f = files[param.name];
+          if (f) fd.append(param.name, f);
+        } else {
+          const v = values[param.name];
+          if (v !== undefined && v !== '') fd.append(param.name, String(v));
+        }
+      }
+      onSubmit(fd);
+      return;
+    }
+
+    // JSON path — unchanged from before.
     const processed: Record<string, any> = {};
     for (const param of parameters) {
       let val = values[param.name];
@@ -53,7 +89,7 @@ export default function ExecuteDialog({ parameters, mode, onSubmit, onCancel }: 
       processed[param.name] = val;
     }
     onSubmit(processed);
-  }, [validate, values, parameters, onSubmit]);
+  }, [validate, values, files, parameters, onSubmit]);
 
   const updateValue = (name: string, value: any) => {
     setValues(prev => ({ ...prev, [name]: value }));
@@ -88,7 +124,38 @@ export default function ExecuteDialog({ parameters, mode, onSubmit, onCancel }: 
               {param.description && (
                 <p className="text-sm text-muted" style={{ marginBottom: '4px' }}>{param.description}</p>
               )}
-              {param.type === 'boolean' ? (
+              {param.type === 'file' ? (
+                <div>
+                  <input
+                    type="file"
+                    accept={param.accept}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        setFiles(prev => ({ ...prev, [param.name]: f }));
+                        setErrors(prev => {
+                          const next = { ...prev };
+                          delete next[param.name];
+                          return next;
+                        });
+                      } else {
+                        setFiles(prev => {
+                          const next = { ...prev };
+                          delete next[param.name];
+                          return next;
+                        });
+                      }
+                    }}
+                    style={{ display: 'block', width: '100%' }}
+                  />
+                  {files[param.name] && (
+                    <p className="text-sm text-muted" style={{ marginTop: '4px' }}>
+                      Selected: <code>{files[param.name].name}</code>
+                      {' '}({Math.round(files[param.name].size / 1024)} KB)
+                    </p>
+                  )}
+                </div>
+              ) : param.type === 'boolean' ? (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"

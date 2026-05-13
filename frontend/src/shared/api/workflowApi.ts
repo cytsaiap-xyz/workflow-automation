@@ -93,6 +93,16 @@ export const workflowApi = {
     return response.data.data!;
   },
 
+  simulateWithFiles: async (id: string, formData: FormData): Promise<Execution> => {
+    const response = await api.post<ApiResponse<Execution>>(
+      `/workflows/${id}/simulate`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    if (!response.data.success) throw new Error(response.data.error);
+    return response.data.data!;
+  },
+
   getExecutions: async (id: string, limit = 20): Promise<Execution[]> => {
     const response = await api.get<ApiResponse<Execution[]>>(`/workflows/${id}/executions`, {
       params: { limit },

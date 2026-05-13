@@ -324,7 +324,7 @@ function EditorPage() {
     }
   }, [simulateWorkflow, currentWorkflow]);
 
-  const handleExecuteWithParams = useCallback(async (inputData: Record<string, any>) => {
+  const handleExecuteWithParams = useCallback(async (inputData: Record<string, any> | FormData) => {
     const mode = showExecuteDialog;
     setShowExecuteDialog(null);
     setShowSimulation(true);
@@ -342,11 +342,9 @@ function EditorPage() {
   const handleRun = useCallback(() => {
     const params = currentWorkflow?.definition.inputParameters;
     if (params && params.length > 0) {
-      if (params.some(p => p.type === 'file')) {
-        setShowRunDialog(true);
-      } else {
-        setShowExecuteDialog('execute');
-      }
+      // ExecuteDialog now handles file inputs natively (via a real file picker
+      // + multipart submit), so we use it for both file and non-file params.
+      setShowExecuteDialog('execute');
       return;
     }
     // No input parameters — use existing JSON-body flow

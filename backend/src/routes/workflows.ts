@@ -168,8 +168,16 @@ router.delete('/:id', (req: Request, res: Response) => {
 /**
  * POST /api/workflows/:id/execute
  * Execute a workflow (supports both application/json and multipart/form-data)
+ *
+ * `simulate=true` runs through the same parsing/uploading flow but tells the
+ * engine to skip side effects.
  */
-async function runExecute(req: Request, res: Response, fromMultipart: boolean): Promise<void> {
+async function runWorkflowRequest(
+  req: Request,
+  res: Response,
+  fromMultipart: boolean,
+  simulate: boolean,
+): Promise<void> {
   try {
     const workflow = WorkflowModel.getById(req.params.id);
     if (!workflow) {
@@ -193,8 +201,13 @@ async function runExecute(req: Request, res: Response, fromMultipart: boolean): 
       triggeredBy = body.triggeredBy ?? 'manual';
     }
 
-    const executionId = req.executionId as string;
+    if (simulate) {
+      const execution = await ExecutionEngine.execute(workflow, triggeredBy, inputData, true);
+      res.json({ success: true, data: execution });
+      return;
+    }
 
+    const executionId = req.executionId as string;
     // INSERT the row only after inputs are successfully gathered.
     ExecutionModel.create(workflow.id, workflow.name, triggeredBy, executionId);
 
@@ -206,49 +219,31 @@ async function runExecute(req: Request, res: Response, fromMultipart: boolean): 
   }
 }
 
-router.post('/:id/execute', async (req: Request, res: Response) => {
-  // Pre-allocate the ID so multer can use it for the upload directory; do NOT INSERT yet.
-  req.executionId = uuidv4();
+function workflowRunRoute(simulate: boolean) {
+  return async (req: Request, res: Response) => {
+    // Pre-allocate the ID so multer can use it for the upload directory; do NOT INSERT yet.
+    // (simulate path doesn't INSERT either way, but it still needs a stable dir name.)
+    req.executionId = uuidv4();
 
-  const ct = (req.headers['content-type'] || '').toString();
-
-  if (ct.startsWith('multipart/')) {
-    // Multipart path — let multer parse the body and save files.
-    return new Promise<void>(resolve => {
-      uploadMiddleware(req, res, async (err) => {
-        if (err) {
-          res.status(400).json({ success: false, error: err.message });
-          return resolve();
-        }
-        await runExecute(req, res, true);
-        resolve();
+    const ct = (req.headers['content-type'] || '').toString();
+    if (ct.startsWith('multipart/')) {
+      return new Promise<void>(resolve => {
+        uploadMiddleware(req, res, async (err) => {
+          if (err) {
+            res.status(400).json({ success: false, error: err.message });
+            return resolve();
+          }
+          await runWorkflowRequest(req, res, true, simulate);
+          resolve();
+        });
       });
-    });
-  }
-
-  // JSON (or no-body) path — req.body already parsed by express.json() middleware.
-  await runExecute(req, res, false);
-});
-
-/**
- * POST /api/workflows/:id/simulate
- */
-router.post('/:id/simulate', async (req: Request, res: Response) => {
-  try {
-    const workflow = WorkflowModel.getById(req.params.id);
-    if (!workflow) {
-      return res.status(404).json({ success: false, error: 'Workflow not found' });
     }
+    await runWorkflowRequest(req, res, false, simulate);
+  };
+}
 
-    const { inputData = {} }: ExecuteWorkflowRequest = req.body;
-
-    const execution = await ExecutionEngine.execute(workflow, 'manual', inputData, true);
-    res.json({ success: true, data: execution });
-  } catch (error: any) {
-    const status = error.message?.startsWith('Missing required input parameter') ? 400 : 500;
-    res.status(status).json({ success: false, error: error.message });
-  }
-});
+router.post('/:id/execute', workflowRunRoute(false));
+router.post('/:id/simulate', workflowRunRoute(true));
 
 /**
  * GET /api/workflows/:id/executions

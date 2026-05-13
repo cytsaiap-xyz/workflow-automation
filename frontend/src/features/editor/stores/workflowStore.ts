@@ -55,9 +55,10 @@ interface WorkflowState {
   selectStep: (stepId: string | null) => void;
   selectStation: (stationId: string | null) => void;
   
-  // Execution actions
-  executeWorkflow: (inputData?: Record<string, any>) => Promise<Execution>;
-  simulateWorkflow: (inputData?: Record<string, any>) => Promise<Execution>;
+  // Execution actions — accept either a plain inputData object (JSON path)
+  // or a FormData (multipart path, used when any input parameter is a file).
+  executeWorkflow: (inputData?: Record<string, any> | FormData) => Promise<Execution>;
+  simulateWorkflow: (inputData?: Record<string, any> | FormData) => Promise<Execution>;
   fetchExecutions: (workflowId: string) => Promise<void>;
   fetchExecutionLogs: (executionId: string) => Promise<void>;
   
@@ -341,14 +342,17 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({ selectedStationId: stationId, selectedStepId: null });
   },
 
-  // Execute workflow
+  // Execute workflow — accepts either a plain inputData object or FormData
+  // (the dialog hands back FormData when at least one file input was selected).
   executeWorkflow: async (inputData) => {
     const { currentWorkflow } = get();
     if (!currentWorkflow) throw new Error('No workflow selected');
 
     set({ isSimulating: true, error: null });
     try {
-      const execution = await workflowApi.execute(currentWorkflow.id, inputData);
+      const execution = inputData instanceof FormData
+        ? await workflowApi.executeWithFiles(currentWorkflow.id, inputData)
+        : await workflowApi.execute(currentWorkflow.id, inputData);
       set({ currentExecution: execution, isSimulating: false });
       return execution;
     } catch (error: any) {
@@ -357,20 +361,22 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
-  // Simulate workflow
+  // Simulate workflow — same FormData routing as execute.
   simulateWorkflow: async (inputData) => {
     const { currentWorkflow } = get();
     if (!currentWorkflow) throw new Error('No workflow selected');
 
     set({ isSimulating: true, error: null });
     try {
-      const execution = await workflowApi.simulate(currentWorkflow.id, inputData);
+      const execution = inputData instanceof FormData
+        ? await workflowApi.simulateWithFiles(currentWorkflow.id, inputData)
+        : await workflowApi.simulate(currentWorkflow.id, inputData);
       set({ currentExecution: execution, isSimulating: false });
-      
+
       // Fetch logs
       const logs = await executionApi.getLogs(execution.id);
       set({ executionLogs: logs });
-      
+
       return execution;
     } catch (error: any) {
       set({ error: error.message, isSimulating: false });
