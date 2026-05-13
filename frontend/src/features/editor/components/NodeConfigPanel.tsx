@@ -91,6 +91,17 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
   );
   const [transformMappingError, setTransformMappingError] = useState<string | null>(null);
 
+  // ai-loop fields — steps and earlyExitWhen edited as JSON; rounds is a plain number
+  const [aiLoopRounds, setAiLoopRounds] = useState(step.config.aiLoopRounds ?? 3);
+  const [aiLoopStepsJson, setAiLoopStepsJson] = useState(
+    step.config.aiLoopSteps ? JSON.stringify(step.config.aiLoopSteps, null, 2) : '[\n  \n]',
+  );
+  const [aiLoopStepsError, setAiLoopStepsError] = useState<string | null>(null);
+  const [aiLoopEarlyExitJson, setAiLoopEarlyExitJson] = useState(
+    step.config.aiLoopEarlyExitWhen ? JSON.stringify(step.config.aiLoopEarlyExitWhen, null, 2) : '[]',
+  );
+  const [aiLoopEarlyExitError, setAiLoopEarlyExitError] = useState<string | null>(null);
+
   // Picker state
   const [activePicker, setActivePicker] = useState<string | null>(null);
 
@@ -165,6 +176,15 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
       step.config.transformMapping ? JSON.stringify(step.config.transformMapping, null, 2) : '{\n  \n}',
     );
     setTransformMappingError(null);
+    setAiLoopRounds(step.config.aiLoopRounds ?? 3);
+    setAiLoopStepsJson(
+      step.config.aiLoopSteps ? JSON.stringify(step.config.aiLoopSteps, null, 2) : '[\n  \n]',
+    );
+    setAiLoopStepsError(null);
+    setAiLoopEarlyExitJson(
+      step.config.aiLoopEarlyExitWhen ? JSON.stringify(step.config.aiLoopEarlyExitWhen, null, 2) : '[]',
+    );
+    setAiLoopEarlyExitError(null);
   }, [step]);
 
   const handleSave = () => {
@@ -284,6 +304,19 @@ function NodeConfigPanel({ step, workflow, onUpdate, onDelete, onClose }: NodeCo
         } catch {
           // Leave previous mapping in place; render() shows the parse error
         }
+        break;
+      case 'ai-loop':
+        config.aiLoopRounds = Math.max(1, Math.floor(Number(aiLoopRounds) || 1));
+        try {
+          const steps = JSON.parse(aiLoopStepsJson);
+          if (Array.isArray(steps)) config.aiLoopSteps = steps;
+        } catch { /* keep previous */ }
+        try {
+          const exits = JSON.parse(aiLoopEarlyExitJson);
+          if (Array.isArray(exits)) {
+            config.aiLoopEarlyExitWhen = exits.map((s: unknown) => String(s)).filter(s => s.trim() !== '');
+          }
+        } catch { /* keep previous */ }
         break;
     }
 
@@ -1236,6 +1269,80 @@ print(json.dumps({'result': result}))`}
                 {step.type === 'ai-agent' && <>&nbsp;&nbsp;toolCalls: array,<br/>&nbsp;&nbsp;iterations: number,<br/></>}
                 {'}'}
               </div>
+            </div>
+          </>
+        );
+
+      case 'ai-loop':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Max rounds</label>
+              <input
+                type="number"
+                className="form-input"
+                value={aiLoopRounds}
+                onChange={(e) => setAiLoopRounds(Number(e.target.value))}
+                min={1}
+                max={20}
+              />
+              <p className="text-xs text-muted mt-1">
+                Hard upper bound. The loop stops earlier when all <code>earlyExitWhen</code> expressions are truthy after a round.
+              </p>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Inner steps (JSON)</label>
+              <textarea
+                className="form-textarea"
+                value={aiLoopStepsJson}
+                onChange={(e) => {
+                  setAiLoopStepsJson(e.target.value);
+                  try {
+                    const parsed = JSON.parse(e.target.value);
+                    setAiLoopStepsError(Array.isArray(parsed) ? null : 'Must be a JSON array');
+                  } catch (err) {
+                    setAiLoopStepsError((err as Error).message);
+                  }
+                }}
+                placeholder={'[\n  {\n    "id": "fix",\n    "systemTemplate": "quiz-fixer-system",\n    "outputSchema": { "type": "object", "properties": { "fixed_questions": { "type": "array" } }, "required": ["fixed_questions"] }\n  },\n  {\n    "id": "verify",\n    "systemTemplate": "quiz-verifier-system",\n    "outputSchema": { "type": "object", "properties": { "results": { "type": "array" }, "all_pass": { "type": "boolean" } }, "required": ["results", "all_pass"] }\n  },\n  {\n    "id": "review",\n    "systemTemplate": "quiz-reviewer-system",\n    "outputSchema": { "type": "object", "properties": { "results": { "type": "array" }, "all_pass": { "type": "boolean" } }, "required": ["results", "all_pass"] }\n  }\n]'}
+                style={{ minHeight: '180px', fontFamily: 'monospace' }}
+              />
+              {aiLoopStepsError && (
+                <p className="text-xs" style={{ color: 'var(--accent-danger)' }}>{aiLoopStepsError}</p>
+              )}
+              <p className="text-xs text-muted mt-1">
+                Each step is one <code>ai.call</code> with a prompt template (by name) and an optional JSON schema. Steps run in order each round; later steps can reference earlier ones via <code>{'${earlierId.parsed.field}'}</code>. Add <code>runWhen</code> to skip a step conditionally.
+              </p>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Early-exit conditions (JSON array)</label>
+              <textarea
+                className="form-textarea"
+                value={aiLoopEarlyExitJson}
+                onChange={(e) => {
+                  setAiLoopEarlyExitJson(e.target.value);
+                  try {
+                    const parsed = JSON.parse(e.target.value);
+                    setAiLoopEarlyExitError(Array.isArray(parsed) ? null : 'Must be a JSON array');
+                  } catch (err) {
+                    setAiLoopEarlyExitError((err as Error).message);
+                  }
+                }}
+                placeholder={'[\n  "${verify.parsed.all_pass}",\n  "${review.parsed.all_pass}"\n]'}
+                style={{ minHeight: '80px', fontFamily: 'monospace' }}
+              />
+              {aiLoopEarlyExitError && (
+                <p className="text-xs" style={{ color: 'var(--accent-danger)' }}>{aiLoopEarlyExitError}</p>
+              )}
+              <p className="text-xs text-muted mt-1">
+                ALL expressions must be truthy to exit. Each is a single <code>{'${path}'}</code> evaluated for truthiness (empty / <code>false</code> / <code>0</code> / <code>null</code> / <code>undefined</code> are falsy).
+              </p>
+            </div>
+
+            <div className="text-xs text-muted">
+              <strong>Output:</strong> {'{ rounds, earlyExit, steps (last-round results keyed by step.id), history (every round) }'}
             </div>
           </>
         );

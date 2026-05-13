@@ -303,6 +303,29 @@ export class StepExecutor {
         }
       }
 
+      case 'ai-loop': {
+        const { runAiLoop } = await import('./aiLoop');
+        try {
+          const result = await runAiLoop(
+            { ...context.variables, inputData: resolvedInput },
+            {
+              rounds: step.config.aiLoopRounds ?? 1,
+              steps: step.config.aiLoopSteps ?? [],
+              earlyExitWhen: step.config.aiLoopEarlyExitWhen,
+            },
+          );
+          return {
+            success: true,
+            output: result,
+            logs: [
+              `ai-loop ran ${result.rounds} round(s)${result.earlyExit ? ' (early exit)' : ''}`,
+            ],
+          };
+        } catch (e: any) {
+          return { success: false, error: `ai-loop failed: ${e.message}`, logs: [] };
+        }
+      }
+
       case 'transform': {
         const { transform } = await import('./transformer');
         try {

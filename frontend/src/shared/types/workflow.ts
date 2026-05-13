@@ -149,7 +149,8 @@ export type StepType =
   | 'quiz-output-writer'
   | 'json-output-writer'
   | 'aggregate'
-  | 'transform';
+  | 'transform'
+  | 'ai-loop';
 
 export interface StepConfig {
   code?: string;
@@ -212,6 +213,20 @@ export interface StepConfig {
   aggregateSeparator?: string;
   // transform
   transformMapping?: Record<string, string>;
+  // ai-loop
+  aiLoopRounds?: number;
+  aiLoopSteps?: Array<{
+    id: string;
+    systemTemplate?: string;
+    userTemplate?: string;
+    outputSchema?: Record<string, any>;
+    providerId?: string;
+    providerName?: string;
+    temperature?: number;
+    maxTokens?: number;
+    runWhen?: string;
+  }>;
+  aiLoopEarlyExitWhen?: string[];
 }
 
 export interface VariableMapping {
@@ -342,4 +357,5 @@ export const STEP_TYPE_INFO: Record<StepType, { label: string; icon: string; col
   'json-output-writer': { label: 'JSON Output Writer', icon: '💾', color: '#10b981' },
   'aggregate': { label: 'Aggregate', icon: '📊', color: '#0891b2' },
   'transform': { label: 'Transform', icon: '🔄', color: '#0891b2' },
+  'ai-loop': { label: 'AI Loop', icon: '🔁', color: '#a855f7' },
 };

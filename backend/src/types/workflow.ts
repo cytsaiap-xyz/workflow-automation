@@ -95,7 +95,8 @@ export type StepType =
   | 'quiz-output-writer'
   | 'json-output-writer'
   | 'aggregate'
-  | 'transform';
+  | 'transform'
+  | 'ai-loop';
 
 export interface StepConfig {
   // Script nodes
@@ -186,6 +187,22 @@ export interface StepConfig {
   // `${path}`-interpolated source expression, resolved against the same
   // context inputVars uses.
   transformMapping?: Record<string, string>;
+
+  // ai-loop step — sequenced-template loop. Each round runs every inner step
+  // in order; the loop exits early when all earlyExitWhen expressions are truthy.
+  aiLoopRounds?: number;
+  aiLoopSteps?: Array<{
+    id: string;
+    systemTemplate?: string;       // prompt template name
+    userTemplate?: string;
+    outputSchema?: Record<string, any>;
+    providerId?: string;
+    providerName?: string;
+    temperature?: number;
+    maxTokens?: number;
+    runWhen?: string;              // optional `${path}` — skip step in a round when falsy
+  }>;
+  aiLoopEarlyExitWhen?: string[];  // array of `${path}` expressions; ALL must be truthy to exit
 }
 
 export interface VariableMapping {
