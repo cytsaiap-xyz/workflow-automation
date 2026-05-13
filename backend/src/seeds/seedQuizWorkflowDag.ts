@@ -191,7 +191,7 @@ return { questions: raw };
 
 // Bump when changing the seeded layout / node ids / edges so existing DB rows
 // get refreshed on the next startup. Increment when default positions change.
-const QUIZ_LAYOUT_VERSION = 2;
+const QUIZ_LAYOUT_VERSION = 3;
 
 export function seedQuizWorkflowDag(): void {
   const existing = WorkflowModel.getById(QUIZ_WORKFLOW_ID);
