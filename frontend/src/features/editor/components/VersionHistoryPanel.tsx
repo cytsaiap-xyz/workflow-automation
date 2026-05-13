@@ -3,6 +3,7 @@ import { Clock, RotateCcw, X } from 'lucide-react';
 import { versionApi } from '../../../shared/api/workflowApi';
 import { useConfirm } from '../../../shared/components/ConfirmDialog';
 import type { WorkflowVersion } from '../../../shared/types/workflow';
+import { isV2 } from '../../../shared/types/workflow';
 
 interface Props {
   workflowId: string;
@@ -114,7 +115,9 @@ export default function VersionHistoryPanel({ workflowId, onRestore, onClose }: 
                 </div>
               )}
               <div className="text-sm text-muted" style={{ marginTop: '4px' }}>
-                {version.definition.stations.length} station{version.definition.stations.length !== 1 ? 's' : ''}
+                {isV2(version.definition)
+                  ? `${version.definition.nodes?.length ?? 0} node${(version.definition.nodes?.length ?? 0) !== 1 ? 's' : ''}`
+                  : `${version.definition.stations?.length ?? 0} station${(version.definition.stations?.length ?? 0) !== 1 ? 's' : ''}`}
               </div>
             </div>
           ))
